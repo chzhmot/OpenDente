@@ -14,6 +14,10 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
 
     /// Detected charging API for this Mac
     private var chargingAPI: SMCChargingAPI = .unknown
+    // Adapter-cut fallback: the adapter key to toggle and the byte that
+    // disconnects the adapter (CHIE=0x08, CH0J=0x20). 0x00 reconnects.
+    private var adapterKey = "CHIE"
+    private var adapterCutByte: UInt8 = 0x08
 
     /// Whether this Mac has a MagSafe LED controllable via ACLC
     private var hasMagSafeLED = false
@@ -54,6 +58,16 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         } else if smc.keyExists("CH0B") {
             chargingAPI = .legacy
             log.info("Detected legacy charging API (CH0B/CH0C)")
+        } else if smc.keyExists("CHIE") {
+            chargingAPI = .adapter
+            adapterKey = "CHIE"
+            adapterCutByte = 0x08
+            log.info("Detected adapter-cut charging API (CHIE)")
+        } else if smc.keyExists("CH0J") {
+            chargingAPI = .adapter
+            adapterKey = "CH0J"
+            adapterCutByte = 0x20
+            log.info("Detected adapter-cut charging API (CH0J)")
         } else {
             chargingAPI = .unknown
             log.info("No charging control keys detected")
@@ -117,6 +131,20 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 }
             } else {
                 log.warning("CHTE readback failed: key not readable")
+            }
+        case .adapter:
+            if let val = smc.readKeyOptional(adapterKey) {
+                let allHex = hexString(val.bytes)
+                let byte = val.uint8Value ?? 0xFF
+                let ok = inhibited ? (byte == adapterCutByte) : (byte == 0x00)
+                if ok {
+                    log.info("\(self.adapterKey, privacy: .public) readback OK: [\(allHex, privacy: .public)]")
+                } else {
+                    let expected = inhibited ? hexString([adapterCutByte]) : "00"
+                    log.error("\(self.adapterKey, privacy: .public) readback MISMATCH: [\(allHex, privacy: .public)], expected [\(expected, privacy: .public)]")
+                }
+            } else {
+                log.warning("\(self.adapterKey, privacy: .public) readback failed: key not readable")
             }
         case .unknown:
             break
@@ -230,6 +258,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
             case .tahoe:
                 log.info("Writing CHTE: [00 00 00 00]")
                 try smc.writeKey("CHTE", bytes: [0x00, 0x00, 0x00, 0x00])
+            case .adapter:
+                log.info("Writing \(self.adapterKey, privacy: .public): [00] (reconnect adapter)")
+                try smc.writeKey(adapterKey, bytes: [0x00])
             case .unknown:
                 break
             }
@@ -261,6 +292,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
             case .tahoe:
                 log.info("Writing CHTE: [01 00 00 00]")
                 try smc.writeKey("CHTE", bytes: [0x01, 0x00, 0x00, 0x00])
+            case .adapter:
+                log.info("Writing \(self.adapterKey, privacy: .public): [\(self.hexString([self.adapterCutByte]), privacy: .public)] (disconnect adapter)")
+                try smc.writeKey(adapterKey, bytes: [adapterCutByte])
             case .unknown:
                 break
             }
@@ -294,6 +328,10 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 let byte: UInt8 = enable ? 0x08 : 0x00
                 log.info("Writing CHIE: [\(self.hexString([byte]), privacy: .public)]")
                 try smc.writeKey("CHIE", bytes: [byte])
+            case .adapter:
+                let byte: UInt8 = enable ? self.adapterCutByte : 0x00
+                log.info("Writing \(self.adapterKey, privacy: .public): [\(self.hexString([byte]), privacy: .public)] (adapter discharge)")
+                try smc.writeKey(adapterKey, bytes: [byte])
             case .unknown:
                 break
             }
@@ -307,6 +345,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 case .tahoe:
                     log.info("Writing CHTE: [01 00 00 00] (discharge + inhibit)")
                     try smc.writeKey("CHTE", bytes: [0x01, 0x00, 0x00, 0x00])
+                case .adapter:
+                    // Adapter already disconnected above; nothing further to inhibit.
+                    break
                 case .unknown:
                     break
                 }
@@ -350,6 +391,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         switch chargingAPI {
         case .legacy:  reply("legacy")
         case .tahoe:   reply("tahoe")
+        case .adapter: reply("adapter")
         case .unknown: reply("unknown")
         }
     }
@@ -412,6 +454,8 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 try smc.writeKey("CH0C", bytes: [0x02])
             case .tahoe:
                 try smc.writeKey("CHTE", bytes: [0x01, 0x00, 0x00, 0x00])
+            case .adapter:
+                try smc.writeKey(adapterKey, bytes: [adapterCutByte])
             case .unknown:
                 break
             }
@@ -450,6 +494,8 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 try smc.writeKey("CH0I", bytes: [0x00])
             case .tahoe:
                 try smc.writeKey("CHIE", bytes: [0x00])
+            case .adapter:
+                try smc.writeKey(adapterKey, bytes: [0x00])
             case .unknown:
                 break
             }
@@ -461,6 +507,8 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 try smc.writeKey("CH0C", bytes: [0x00])
             case .tahoe:
                 try smc.writeKey("CHTE", bytes: [0x00, 0x00, 0x00, 0x00])
+            case .adapter:
+                try smc.writeKey(adapterKey, bytes: [0x00])
             case .unknown:
                 break
             }

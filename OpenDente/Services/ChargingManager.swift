@@ -58,6 +58,13 @@ final class ChargingManager: ObservableObject {
     /// Tracked helper version — used to gate protocol features (e.g. MagSafe LED).
     /// Internal for testability.
     var helperVersion: String?
+    /// One-shot guard so a stale-helper reload is attempted at most once per launch.
+    private var didAttemptHelperReload = false
+    /// Adapter-cut machines (CHIE/CH0J): true while WE have cut the adapter.
+    /// Cutting the adapter makes IOKit report "on battery", so without this flag
+    /// evaluateState would drop into .onBattery, forget the cut, and never restore
+    /// the adapter — draining the battery while physically plugged in.
+    private var adapterCutActive = false
 
     /// Last LED color sent to avoid duplicate XPC calls.
     /// Internal setter for testability (simulating helper reconnect).
@@ -168,21 +175,34 @@ final class ChargingManager: ObservableObject {
                 switch api {
                 case "legacy": self?.chargingAPI = .legacy
                 case "tahoe":  self?.chargingAPI = .tahoe
+                case "adapter": self?.chargingAPI = .adapter
                 default:       break
                 }
             }
         }
         client.getVersion { [weak self] version in
             Task { @MainActor in
-                self?.helperVersion = version
+                guard let self else { return }
+                self.helperVersion = version
                 log.info("Helper version: \(version, privacy: .public)")
+                // If the running helper's version differs from the app bundle's
+                // helper, the registered SMAppService daemon is stale (the classic
+                // "rebuild keeps running the old helper" problem). Force a one-time
+                // unregister -> register so the current helper binary takes over.
+                if version != HelperConstants.helperVersion, !self.didAttemptHelperReload {
+                    self.didAttemptHelperReload = true
+                    log.warning("Helper version mismatch (running \(version, privacy: .public), expected \(HelperConstants.helperVersion, privacy: .public)) — reloading daemon")
+                    HelperInstaller.unregister()
+                    _ = HelperInstaller.register()
+                    return
+                }
                 // Reset LED cache — helper may have restarted with default LED state
-                self?.lastLEDColor = nil
-                self?.updateMagSafeLED()
+                self.lastLEDColor = nil
+                self.updateMagSafeLED()
                 // Sync sleep settings with helper (defense-in-depth)
-                self?.syncSleepSettingsWithHelper()
+                self.syncSleepSettingsWithHelper()
                 // Resync charging state with the (re)connected helper
-                self?.resyncChargingState()
+                self.resyncChargingState()
             }
         }
     }
@@ -215,6 +235,9 @@ final class ChargingManager: ObservableObject {
         } else if smc.keyExists("CH0B") {
             chargingAPI = .legacy
             log.notice("Detected legacy charging API (CH0B/CH0C)")
+        } else if smc.keyExists("CHIE") || smc.keyExists("CH0J") {
+            chargingAPI = .adapter
+            log.notice("Detected adapter-cut charging API (CHIE/CH0J)")
         } else {
             chargingAPI = .unknown
             log.notice("No charging control keys detected")
@@ -260,6 +283,7 @@ final class ChargingManager: ObservableObject {
         switch chargingAPI {
         case .tahoe: apiName = "tahoe"
         case .legacy: apiName = "legacy"
+        case .adapter: apiName = "adapter"
         case .unknown: apiName = "unknown"
         }
 
@@ -294,7 +318,10 @@ final class ChargingManager: ObservableObject {
         // Not plugged in = on battery, nothing to control.
         // Exception: during force discharge, IOKit reports power source as "battery"
         // even though the charger is physically connected. Don't kill our own discharge.
-        guard state.isPluggedIn || mode == .discharging else {
+        // Adapter-cut machines: our own cut looks like an unplug to IOKit. Keep
+        // ownership so we restore the adapter once we drop back into range.
+        let holdingAdapterCut = chargingAPI == .adapter && adapterCutActive
+        guard state.isPluggedIn || mode == .discharging || holdingAdapterCut else {
             if mode == .topUp {
                 log.info("Top Up ended: unplugged at \(state.percentage, privacy: .public)%")
             }
@@ -422,7 +449,7 @@ final class ChargingManager: ObservableObject {
         }
 
         // Automatic discharge: if battery > limit and auto-discharge is on
-        if settings.automaticDischarge && pct > limit && mode == .paused {
+        if settings.automaticDischarge && chargingAPI != .adapter && pct > limit && mode == .paused {
             log.notice("Auto-discharge: \(pct, privacy: .public)% > \(limit, privacy: .public)%")
             startDischarge()
         }
@@ -671,6 +698,13 @@ final class ChargingManager: ObservableObject {
             log.warning("Cannot start discharge: \(self.controlUnavailableReason, privacy: .public)")
             return
         }
+        // Adapter-cut machines (CHIE/CH0J) can stop charging but cannot force a
+        // true discharge while plugged in — attempting it only thrashes the
+        // adapter gate and can wedge charging. Hold the ceiling instead.
+        if chargingAPI == .adapter {
+            log.notice("Force-discharge unsupported on adapter-cut machine — holding ceiling instead")
+            return
+        }
         log.notice("Discharge started at \(self.battery.batteryState.percentage, privacy: .public)%")
         forceDischarge(true)
         mode = .discharging
@@ -712,12 +746,16 @@ final class ChargingManager: ObservableObject {
 
         lastInhibitTime = Date()
         if firstInhibitTime == nil { firstInhibitTime = lastInhibitTime }
+        if chargingAPI == .adapter { adapterCutActive = true }
         helper.inhibitCharging { [weak self] success, error in
             if success {
                 log.info("SMC: inhibit written — waiting for IOKit confirmation")
             } else {
                 log.error("Failed to inhibit charging: \(error ?? "unknown error", privacy: .public)")
-                Task { @MainActor in self?.mode = .idle }
+                Task { @MainActor in
+                    self?.adapterCutActive = false
+                    self?.mode = .idle
+                }
             }
         }
     }
@@ -735,6 +773,7 @@ final class ChargingManager: ObservableObject {
         lastInhibitTime = nil
         inhibitRetryCount = 0
         didNotifyInhibitExhausted = false
+        adapterCutActive = false
 
         helper.enableCharging { [weak self] success, error in
             if success {

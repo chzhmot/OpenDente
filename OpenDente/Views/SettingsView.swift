@@ -545,6 +545,7 @@ struct BatteryInfoTab: View {
         switch charging.chargingAPI {
         case .legacy: return "Legacy (CH0B/CH0C)"
         case .tahoe:  return "Tahoe (CHTE/CHIE)"
+        case .adapter: return "Adapter cut (CHIE/CH0J)"
         case .unknown: return "Not detected"
         }
     }

@@ -339,5 +339,6 @@ extension Comparable {
 enum SMCChargingAPI {
     case legacy     // CH0B/CH0C/CH0I (M1/M2/M3)
     case tahoe      // CHTE/CHIE (newer Macs)
+    case adapter    // CHIE/CH0J adapter-cut only (charge-inhibit keys absent)
     case unknown    // Not yet detected
 }

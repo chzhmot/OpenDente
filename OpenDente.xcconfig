@@ -1,0 +1,29 @@
+// OpenDente.xcconfig
+// Xcode build configuration for the OpenDente fork.
+//
+// How to attach it in Xcode:
+//   1. Drag this file into the project navigator (anywhere in the project).
+//   2. Select the project (top of the navigator) ▸ Info tab ▸ Configurations.
+//   3. For BOTH "Debug" and "Release", set the project-level dropdown to
+//      "OpenDente". All targets (app, helper, tests) inherit from it.
+//   4. Build (⌘R).
+//
+// This only sets signing + shared toolchain values. Per-target bundle IDs
+// (com.opendente.app / .helper / .tests) stay as the project defines them —
+// do not set PRODUCT_BUNDLE_IDENTIFIER here or all three targets collide.
+
+// ── Signing ─────────────────────────────────────────────────────────────
+// Replace YOUR_TEAM_ID with your own 10-character Team ID.
+// A free personal Apple ID works. Find it in:
+//   Xcode ▸ Settings ▸ Accounts ▸ (your Apple ID) ▸ the team row,
+//   or the Team dropdown in any target's Signing & Capabilities tab.
+DEVELOPMENT_TEAM = XM72L9P3TU
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+
+// ── Toolchain / deployment (match project.yml) ──────────────────────────
+MACOSX_DEPLOYMENT_TARGET = 14.0
+SWIFT_VERSION = 6.0
+
+// Required for the SMAppService privileged helper to load.
+ENABLE_HARDENED_RUNTIME = YES
