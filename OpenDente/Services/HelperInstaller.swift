@@ -62,12 +62,13 @@ enum HelperInstaller {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// A rebuilt or updated app ships a new helper binary, but launchd keeps its record of the
-    /// old one and then fails to spawn the helper (EX_CONFIG). The status then reads enabled or
-    /// requires approval. Re-registering replaces the record. With no fingerprint stored yet,
-    /// re-register once to be safe.
+    /// A rebuilt or updated app ships a new helper binary, but launchd can keep its record of
+    /// the old one and fail to spawn the helper (EX_CONFIG) while the status reads enabled.
+    /// Re-registering replaces the record. With no fingerprint stored yet, re-register once.
+    /// Not when macOS asks for approval of the changed helper: register() fails with EPERM
+    /// until the user approves it in Login Items.
     nonisolated static func needsReregistration(status: SMAppService.Status, registered: String?, bundled: String?) -> Bool {
-        (status == .enabled || status == .requiresApproval) && bundled != nil && registered != bundled
+        status == .enabled && bundled != nil && registered != bundled
     }
 
     /// Re-register when the bundled helper differs from the registered one.
@@ -79,15 +80,7 @@ enum HelperInstaller {
         }
         log.notice("Bundled helper changed since registration — re-registering")
         unregister()
-        // register() hands requiresApproval to System Settings instead of registering
-        do {
-            try service.register()
-            UserDefaults.standard.set(bundledHelperFingerprint, forKey: fingerprintKey)
-        } catch {
-            log.error("Failed to re-register helper daemon: \(error, privacy: .public)")
-        }
-        log.notice("Helper status after re-register: \(String(describing: service.status), privacy: .public)")
-        return service.status == .enabled
+        return register()
     }
 
     /// Unregister the helper daemon

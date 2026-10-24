@@ -19,14 +19,10 @@ final class HelperInstallerTests: XCTestCase {
         XCTAssertFalse(HelperInstaller.needsReregistration(status: .enabled, registered: "aaa", bundled: "aaa"))
     }
 
-    func testReregister_whenChangedHelperShowsRequiresApproval() {
-        // After a rebuild macOS reports the old registration as needing approval
-        XCTAssertTrue(HelperInstaller.needsReregistration(status: .requiresApproval, registered: "aaa", bundled: "bbb"))
-    }
-
-    func testNoReregister_whenUnchangedHelperAwaitsApproval() {
-        // A first install the user hasn't approved yet: re-registering won't help
-        XCTAssertFalse(HelperInstaller.needsReregistration(status: .requiresApproval, registered: "aaa", bundled: "aaa"))
+    func testNoReregister_whenChangedHelperRequiresApproval() {
+        // macOS wants the user to approve the changed helper; register() fails with EPERM
+        // until then, and unregistering would only turn "approve" into "install"
+        XCTAssertFalse(HelperInstaller.needsReregistration(status: .requiresApproval, registered: "aaa", bundled: "bbb"))
     }
 
     func testNoReregister_whenNotRegistered() {
