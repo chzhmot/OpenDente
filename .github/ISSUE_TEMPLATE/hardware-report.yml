@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks! Starting with the macOS 15.8 / 26.7 updates, Apple changed the firmware of MacBooks and removed some of the SMC keys that other battery apps use to control charging. Which charging mode OpenDente can use therefore depends on your Mac's firmware version, not just on the macOS version, so please include both. See [How it works](../blob/main/docs/HOW-IT-WORKS.md#macos-versions-and-smc-keys).
+        Thanks! Starting with the macOS 15.8 / 26.7 updates, Apple changed the firmware of MacBooks and removed some of the SMC keys that other battery apps use to control charging. Which charging mode OpenDente can use may therefore depend on your firmware version as well as your macOS version, so please include both. See [How it works](../blob/main/docs/HOW-IT-WORKS.md#macos-versions-and-smc-keys).
 
         Two commands give you most of it:
         ```

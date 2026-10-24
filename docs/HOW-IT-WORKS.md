@@ -48,7 +48,9 @@ Apple hasn't documented any of this. The table is based on reports from other op
 - [charlie0129/batt PR #154](https://github.com/charlie0129/batt/pull/154): on macOS 27 beta 4+ firmware, all charge keys are gated by `soc-limit`; the adapter key is not.
 - [9to5Mac on macOS 26.4](https://9to5mac.com/2026/04/03/macos-26-4-adds-three-new-battery-features-on-mac-heres-how-to-use-them/): Apple's own charge limit.
 
-If your Mac behaves differently, please file a [hardware report](../../../issues/new?template=hardware-report.yml). The firmware version (System Information → Hardware → System Firmware Version) matters more than the macOS version.
+If your Mac behaves differently, please file a [hardware report](../../../issues/new?template=hardware-report.yml). Please include both the macOS version and the firmware version (System Information → Hardware → System Firmware Version): reports from other tools suggest the key changes come with the firmware, but it isn't clear which of the two decides.
+
+Known to work: MacBook Pro M1 Max, macOS 15.8.1, firmware 20457.1.29, firmware range mode (the battery holds its charge while the adapter powers the Mac).
 
 ## Getting charging back when something goes wrong
 
