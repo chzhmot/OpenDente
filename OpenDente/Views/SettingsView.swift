@@ -13,19 +13,72 @@ struct SettingsView: View {
             ChargingTab()
                 .tabItem { Label("Charging", systemImage: "bolt.fill") }
 
-            NotificationsTab()
-                .tabItem { Label("Notifications", systemImage: "bell") }
-
-            StatusBarTab()
-                .tabItem { Label("Status Bar", systemImage: "menubar.rectangle") }
-
-            PopoverItemsTab()
-                .tabItem { Label("Popover", systemImage: "list.bullet") }
-
             BatteryInfoTab()
                 .tabItem { Label("Battery", systemImage: "battery.100percent") }
+
+            PanelItemsTab()
+                .tabItem { Label("Panel", systemImage: "list.bullet") }
+
+            MenuBarTab()
+                .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
+
+            NotificationsTab()
+                .tabItem { Label("Notifications", systemImage: "bell") }
         }
-        .frame(width: 500)
+        .frame(minWidth: 500, idealWidth: 500, maxWidth: .infinity,
+               minHeight: 360, idealHeight: 520, maxHeight: .infinity)
+        .background(SettingsWindowConfigurator())
+    }
+}
+
+/// SwiftUI's Settings window titles itself after the selected tab and isn't
+/// user-resizable. Pin the title to the app name, allow free resizing and
+/// remember the size/position.
+private struct SettingsWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ConfiguratorView() }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ConfiguratorView)?.apply()
+    }
+
+    final class ConfiguratorView: NSView {
+        private var titleObservation: NSKeyValueObservation?
+        private var windowObservers: [NSObjectProtocol] = []
+
+        /// OpenDente is a menu bar app (no Dock icon). While the settings window is open it gets a
+        /// Dock icon and shows up in the app switcher; closing the window takes both away again.
+        private func showInDock(_ show: Bool) {
+            NSApp.setActivationPolicy(show ? .regular : .accessory)
+            if show { NSApp.activate(ignoringOtherApps: true) }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            showInDock(true)
+            windowObservers = [
+                NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
+                    self?.showInDock(true)
+                },
+                NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                    self?.showInDock(false)
+                },
+            ]
+            // Remember size and position across openings and app restarts.
+            // Setting the name also restores the saved frame straight away.
+            window.setFrameAutosaveName("OpenDenteSettingsWindow")
+            apply()
+            // SwiftUI rewrites the title on every tab switch — put ours back.
+            titleObservation = window.observe(\.title, options: [.new]) { [weak self] _, _ in
+                DispatchQueue.main.async { self?.apply() }
+            }
+        }
+
+        func apply() {
+            guard let window else { return }
+            let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "OpenDente"
+            if window.title != name { window.title = name }
+            if !window.styleMask.contains(.resizable) { window.styleMask.insert(.resizable) }
+        }
     }
 }
 
@@ -252,136 +305,152 @@ struct ChargingTab: View {
     }
 }
 
-// MARK: - Status Bar Tab
+// MARK: - Menu Bar Tab
 
-struct StatusBarTab: View {
+struct MenuBarTab: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var battery = BatteryService.shared
     @ObservedObject var charging = ChargingManager.shared
 
     var body: some View {
         Form {
-            Section("Show in Status Bar") {
-                Toggle("Battery Percentage", isOn: $settings.statusBarShowPercentage)
-                Toggle("Temperature", isOn: $settings.statusBarShowTemperature)
-                Toggle("Power Usage", isOn: $settings.statusBarShowPower)
+            Section {
+                ForEach(MenuBarItem.allCases) { item in
+                    Toggle(item.title, isOn: Binding(
+                        get: { settings.isShown(item) },
+                        set: { settings.setShown(item, $0) }))
+                }
                 Toggle("Charging Mode Icon", isOn: $settings.statusBarShowMode)
+            } header: {
+                Text("Show in Menu Bar")
+            } footer: {
+                Text("With nothing selected the icon stays, so you can still open OpenDente.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {
-                Text("Preview:")
+                Image(nsImage: statusBarImage)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .frame(maxWidth: .infinity)
+
+                ForEach(settings.shownMenuBarItems) { item in
+                    HStack {
+                        Text(item.title)
+                        Spacer()
+                        Button { settings.moveMenuBarItem(item, by: -1, shownOnly: true) } label: { Image(systemName: "chevron.up") }
+                            .disabled(settings.shownMenuBarItems.first == item)
+                        Button { settings.moveMenuBarItem(item, by: 1, shownOnly: true) } label: { Image(systemName: "chevron.down") }
+                            .disabled(settings.shownMenuBarItems.last == item)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            } header: {
+                Text("Preview")
+            } footer: {
+                Text("One menu bar item. The arrows set the order, left to right.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    Image(systemName: statusBarIcon)
-                        .font(.system(size: 15))
-                    if !statusBarPreview.isEmpty {
-                        Text(statusBarPreview)
-                            .font(.system(size: 13, design: .monospaced))
-                    }
-                }
-                .padding(8)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
             }
         }
         .formStyle(.grouped)
     }
 
-    private var statusBarIcon: String {
+    private var statusBarImage: NSImage {
         let state = battery.batteryState
         let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
-        return settings.statusBarShowMode
-            ? charging.mode.batteryIconName(percentage: pct, isCharging: state.isCharging)
-            : ChargingMode.idle.batteryIconName(percentage: pct, isCharging: false)
-    }
-
-    private var statusBarPreview: String {
-        let state = battery.batteryState
-        let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
-        return state.statusBarText(
-            effectivePercentage: pct,
-            showPercentage: settings.statusBarShowPercentage,
-            showTemperature: settings.statusBarShowTemperature,
-            showPower: settings.statusBarShowPower
-        )
+        let glyph = MenuBarBatteryIcon.glyph(state: state, mode: charging.mode,
+                                             showMode: settings.statusBarShowMode)
+        let segments = MenuBarBatteryIcon.segments(state: state, pct: pct, items: settings.shownMenuBarItems)
+        return MenuBarBatteryIcon.statusImage(segments: segments, percentage: pct, glyph: glyph,
+                                              lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
 }
 
-// MARK: - Popover Items Tab
+// MARK: - Panel Tab
 
-struct PopoverItemsTab: View {
+/// What the panel (the window that opens when you click the menu bar item) shows, and in what order.
+struct PanelItemsTab: View {
     @ObservedObject var settings = AppSettings.shared
-    @State private var enabledItems: [PopoverDetailItem] = []
-    @State private var disabledItems: [PopoverDetailItem] = []
+    @State private var enabledItems: [PanelDetailItem] = []
+    @State private var disabledItems: [PanelDetailItem] = []
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text("Drag to reorder. Toggle to show/hide.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+        Form {
+            Section {
+                Toggle("Show Power Flow", isOn: $settings.showPowerFlow)
+            }
 
-            List {
-                Section {
-                    Toggle("Show Power Flow", isOn: $settings.showPowerFlow)
+            Section {
+                ForEach(enabledItems) { item in
+                    PanelItemRow(item: item, isEnabled: true,
+                                 canMoveUp: enabledItems.first != item,
+                                 canMoveDown: enabledItems.last != item,
+                                 onMove: { move(item, by: $0) },
+                                 onToggle: { disableItem(item) })
                 }
+            } header: {
+                Text("Visible")
+            } footer: {
+                Text("The arrows set the order, top to bottom.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-                Section("Visible") {
-                    ForEach(enabledItems) { item in
-                        PopoverItemRow(item: item, isEnabled: true) {
-                            disableItem(item)
-                        }
-                    }
-                    .onMove { from, to in
-                        enabledItems.move(fromOffsets: from, toOffset: to)
-                        save()
-                    }
-                }
-
+            if !disabledItems.isEmpty {
                 Section("Hidden") {
                     ForEach(disabledItems) { item in
-                        PopoverItemRow(item: item, isEnabled: false) {
-                            enableItem(item)
-                        }
+                        PanelItemRow(item: item, isEnabled: false,
+                                     canMoveUp: false, canMoveDown: false,
+                                     onMove: { _ in },
+                                     onToggle: { enableItem(item) })
                     }
                 }
             }
         }
+        .formStyle(.grouped)
         .onAppear { load() }
     }
 
     private func load() {
-        enabledItems = settings.popoverDetailItems
+        enabledItems = settings.panelDetailItems
         let enabledSet = Set(enabledItems.map(\.rawValue))
-        disabledItems = PopoverDetailItem.allCases.filter { !enabledSet.contains($0.rawValue) }
+        disabledItems = PanelDetailItem.allCases.filter { !enabledSet.contains($0.rawValue) }
     }
 
     private func save() {
-        settings.popoverDetailItems = enabledItems
+        settings.panelDetailItems = enabledItems
     }
 
-    private func disableItem(_ item: PopoverDetailItem) {
+    private func move(_ item: PanelDetailItem, by offset: Int) {
+        guard let i = enabledItems.firstIndex(of: item), enabledItems.indices.contains(i + offset) else { return }
+        enabledItems.swapAt(i, i + offset)
+        save()
+    }
+
+    private func disableItem(_ item: PanelDetailItem) {
         enabledItems.removeAll { $0 == item }
         disabledItems.append(item)
         save()
     }
 
-    private func enableItem(_ item: PopoverDetailItem) {
+    private func enableItem(_ item: PanelDetailItem) {
         disabledItems.removeAll { $0 == item }
         enabledItems.append(item)
         save()
     }
 }
 
-struct PopoverItemRow: View {
-    let item: PopoverDetailItem
+struct PanelItemRow: View {
+    let item: PanelDetailItem
     let isEnabled: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMove: (Int) -> Void
     let onToggle: () -> Void
 
     var body: some View {
@@ -396,13 +465,20 @@ struct PopoverItemRow: View {
 
             Spacer()
 
+            if isEnabled {
+                Button { onMove(-1) } label: { Image(systemName: "chevron.up") }
+                    .disabled(!canMoveUp)
+                Button { onMove(1) } label: { Image(systemName: "chevron.down") }
+                    .disabled(!canMoveDown)
+            }
+
             Button(action: onToggle) {
                 Image(systemName: isEnabled ? "eye.fill" : "eye.slash")
                     .font(.system(size: 12))
                     .foregroundStyle(isEnabled ? .blue : .secondary)
             }
-            .buttonStyle(.plain)
         }
+        .buttonStyle(.borderless)
     }
 }
 
@@ -460,7 +536,7 @@ struct BatteryInfoTab: View {
                              warn: { $0 < 0 || $0 > 200 })
             }
 
-            if PopoverView.adapterVisible(isPluggedIn: state.isPluggedIn, mode: charging.mode), let adapter = state.adapterInfo {
+            if PanelView.adapterVisible(isPluggedIn: state.isPluggedIn, mode: charging.mode), let adapter = state.adapterInfo {
                 Section("Adapter") {
                     infoRow("Name", value: adapter.name)
                     if let desc = adapter.description {
@@ -545,6 +621,7 @@ struct BatteryInfoTab: View {
         switch charging.chargingAPI {
         case .legacy: return "Legacy (CH0B/CH0C)"
         case .tahoe:  return "Tahoe (CHTE/CHIE)"
+        case .firmware: return "Firmware range (bfD0/bfE0/bfF0)"
         case .adapter: return "Adapter cut (CHIE/CH0J)"
         case .unknown: return "Not detected"
         }

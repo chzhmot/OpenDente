@@ -35,7 +35,7 @@ enum HelperConstants {
     static let stateFilePath = "/Library/Application Support/OpenDente/helper-state"
 
     /// Helper version (bump when protocol changes)
-    static let helperVersion = "1.3.1"
+    static let helperVersion = "1.5.0"
 
     /// Minimum helper version that supports MagSafe LED control (ACLC)
     static let minVersionMagSafeLED = "1.1.0"
@@ -56,4 +56,30 @@ enum HelperConstants {
     static let ledGreen: UInt8 = 0x03
     /// Orange LED (actively charging / discharging)
     static let ledOrange: UInt8 = 0x04
+}
+
+// MARK: - Firmware charge range (bfD0 / bfE0 / bfF0)
+
+/// Newer Apple firmware removed CHTE/CH0B and gates charging behind a charge range:
+/// bfD0 = upper %, bfE0 = lower % (both ui32, little-endian), bfF0 = mode (ui8).
+/// Charging stops while the battery sits above the upper limit, and the adapter keeps
+/// powering the Mac. Setting bfF0 back to normal restores default charging.
+enum FirmwareChargeLimit {
+    static let upperKey = "bfD0"
+    static let lowerKey = "bfE0"
+    static let modeKey = "bfF0"
+
+    static let modeNormal: UInt8 = 0x00
+    static let modeLimited: UInt8 = 0x02
+
+    /// Range that holds a battery sitting at `percentage`: upper 2% below it, lower 2% below that.
+    static func range(holding percentage: Int) -> (upper: Int, lower: Int) {
+        let upper = max(2, percentage - 2)
+        return (upper, upper - 2)
+    }
+
+    /// ui32 little-endian bytes for a percentage.
+    static func bytes(for percentage: Int) -> [UInt8] {
+        [UInt8(clamping: percentage), 0x00, 0x00, 0x00]
+    }
 }

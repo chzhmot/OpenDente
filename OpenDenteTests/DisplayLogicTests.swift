@@ -272,34 +272,34 @@ final class DisplayLogicTests: XCTestCase {
 
     func testCanDischarge_pluggedInAboveLimit_true() {
         XCTAssertTrue(
-            PopoverView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
         )
     }
 
     func testCanDischarge_notPluggedIn_false() {
         XCTAssertFalse(
-            PopoverView.canDischarge(isPluggedIn: false, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: false, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
         )
     }
 
     func testCanDischarge_atOrBelowLimit_false() {
         XCTAssertFalse(
-            PopoverView.canDischarge(isPluggedIn: true, percentage: 80, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: true, percentage: 80, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
         )
         XCTAssertFalse(
-            PopoverView.canDischarge(isPluggedIn: true, percentage: 75, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: true, percentage: 75, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
         )
     }
 
     func testCanDischarge_noHelper_false() {
         XCTAssertFalse(
-            PopoverView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: false, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: false, chargingAPI: .legacy)
         )
     }
 
     func testCanDischarge_unknownAPI_false() {
         XCTAssertFalse(
-            PopoverView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .unknown),
+            PanelView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .unknown),
             "Unknown charging API must prevent discharge — no SMC keys to write"
         )
     }
@@ -307,28 +307,28 @@ final class DisplayLogicTests: XCTestCase {
     // MARK: - adapterVisible
 
     func testAdapterVisible_pluggedIn_true() {
-        XCTAssertTrue(PopoverView.adapterVisible(isPluggedIn: true, mode: .charging))
-        XCTAssertTrue(PopoverView.adapterVisible(isPluggedIn: true, mode: .paused))
-        XCTAssertTrue(PopoverView.adapterVisible(isPluggedIn: true, mode: .sailing))
+        XCTAssertTrue(PanelView.adapterVisible(isPluggedIn: true, mode: .charging))
+        XCTAssertTrue(PanelView.adapterVisible(isPluggedIn: true, mode: .paused))
+        XCTAssertTrue(PanelView.adapterVisible(isPluggedIn: true, mode: .sailing))
     }
 
     func testAdapterVisible_unplugged_false() {
-        XCTAssertFalse(PopoverView.adapterVisible(isPluggedIn: false, mode: .onBattery))
-        XCTAssertFalse(PopoverView.adapterVisible(isPluggedIn: false, mode: .idle))
+        XCTAssertFalse(PanelView.adapterVisible(isPluggedIn: false, mode: .onBattery))
+        XCTAssertFalse(PanelView.adapterVisible(isPluggedIn: false, mode: .idle))
     }
 
     func testAdapterVisible_forceDischarge_trueEvenWhenNotPluggedIn() {
         // During force discharge, IOKit may report isPluggedIn=false
         // but charger is physically connected — adapter info must stay visible
-        XCTAssertTrue(PopoverView.adapterVisible(isPluggedIn: false, mode: .discharging))
-        XCTAssertTrue(PopoverView.adapterVisible(isPluggedIn: true, mode: .discharging))
+        XCTAssertTrue(PanelView.adapterVisible(isPluggedIn: false, mode: .discharging))
+        XCTAssertTrue(PanelView.adapterVisible(isPluggedIn: true, mode: .discharging))
     }
 
     func testAdapterVisible_unplugged_allNonDischargeModes_false() {
         let modes: [ChargingMode] = [.charging, .paused, .sailing, .topUp, .calibrating, .heatProtection, .onBattery, .idle]
         for mode in modes {
             XCTAssertFalse(
-                PopoverView.adapterVisible(isPluggedIn: false, mode: mode),
+                PanelView.adapterVisible(isPluggedIn: false, mode: mode),
                 "Adapter should be hidden when unplugged in mode \(mode)"
             )
         }

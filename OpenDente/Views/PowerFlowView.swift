@@ -162,7 +162,7 @@ struct PowerFlowView: View {
             }
             Spacer()
             Text("\(battery.percentage)%")
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .font(.system(size: 14, weight: .semibold).monospacedDigit())
         }
     }
 
@@ -268,7 +268,7 @@ struct PowerFlowView: View {
                 .foregroundStyle(.secondary)
             if let label, !label.isEmpty {
                 Text(label)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(.system(size: 9, weight: .medium).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
@@ -292,7 +292,7 @@ struct PowerFlowView: View {
                 }
                 .overlay(
                     Text(label)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
                         .foregroundStyle(.primary)
                 )
             }

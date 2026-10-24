@@ -8,5 +8,6 @@ struct OpenDenteApp: App {
         Settings {
             SettingsView()
         }
+        .windowResizability(.contentMinSize)
     }
 }

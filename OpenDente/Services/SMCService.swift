@@ -322,6 +322,17 @@ final class SMCService: @unchecked Sendable {
         return (fourCharString(from: output.keyInfo.dataType), output.keyInfo.dataSize)
     }
 
+    /// True when the firmware charge-range keys exist with the expected layout
+    /// (bfD0/bfE0 ui32, bfF0 ui8). Read-only; these keys are readable without root.
+    static func hasFirmwareChargeRange(_ smc: SMCService) -> Bool {
+        guard let upper = smc.keyInfo(FirmwareChargeLimit.upperKey),
+              let lower = smc.keyInfo(FirmwareChargeLimit.lowerKey),
+              let mode = smc.keyInfo(FirmwareChargeLimit.modeKey) else { return false }
+        return upper.type.hasPrefix("ui32") && upper.size == 4
+            && lower.type.hasPrefix("ui32") && lower.size == 4
+            && mode.type.hasPrefix("ui8") && mode.size == 1
+    }
+
     // MARK: - Private
 
     private func callSMC(input: SMCParamStruct) throws -> SMCParamStruct {

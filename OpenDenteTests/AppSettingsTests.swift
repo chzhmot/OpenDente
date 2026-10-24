@@ -94,6 +94,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(settings.chargingEnabled)
         XCTAssertTrue(settings.sailingModeEnabled)
         XCTAssertTrue(settings.heatProtectionEnabled)
+        XCTAssertTrue(settings.statusBarShowIcon)
         XCTAssertTrue(settings.statusBarShowPercentage)
         XCTAssertTrue(settings.statusBarShowMode)
         XCTAssertTrue(settings.showPowerFlow)

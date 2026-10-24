@@ -91,11 +91,21 @@ final class AppSettings: ObservableObject {
         set { objectWillChange.send(); defaults.set(newValue, forKey: "disableSleepUntilChargeLimit") }
     }
 
-    // MARK: - Status Bar Display
+    // MARK: - Menu Bar Display
+
+    var statusBarShowIcon: Bool {
+        get { defaults.object(forKey: "statusBarShowIcon") as? Bool ?? true }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowIcon") }
+    }
 
     var statusBarShowPercentage: Bool {
         get { defaults.object(forKey: "statusBarShowPercentage") as? Bool ?? true }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowPercentage") }
+    }
+
+    var statusBarShowTimeRemaining: Bool {
+        get { defaults.bool(forKey: "statusBarShowTimeRemaining") }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowTimeRemaining") }
     }
 
     var statusBarShowTemperature: Bool {
@@ -106,6 +116,55 @@ final class AppSettings: ObservableObject {
     var statusBarShowPower: Bool {
         get { defaults.bool(forKey: "statusBarShowPower") }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowPower") }
+    }
+
+    /// Order of the menu bar items, left to right. Unknown entries are dropped and new items appended.
+    var menuBarOrder: [MenuBarItem] {
+        get {
+            let stored = (defaults.stringArray(forKey: "menuBarOrder") ?? []).compactMap(MenuBarItem.init(rawValue:))
+            var order: [MenuBarItem] = []
+            for item in stored + MenuBarItem.allCases where !order.contains(item) { order.append(item) }
+            return order
+        }
+        set { objectWillChange.send(); defaults.set(newValue.map(\.rawValue), forKey: "menuBarOrder") }
+    }
+
+    func isShown(_ item: MenuBarItem) -> Bool {
+        switch item {
+        case .icon:          return statusBarShowIcon
+        case .percentage:    return statusBarShowPercentage
+        case .timeRemaining: return statusBarShowTimeRemaining
+        case .temperature:   return statusBarShowTemperature
+        case .power:         return statusBarShowPower
+        }
+    }
+
+    func setShown(_ item: MenuBarItem, _ shown: Bool) {
+        switch item {
+        case .icon:          statusBarShowIcon = shown
+        case .percentage:    statusBarShowPercentage = shown
+        case .timeRemaining: statusBarShowTimeRemaining = shown
+        case .temperature:   statusBarShowTemperature = shown
+        case .power:         statusBarShowPower = shown
+        }
+    }
+
+    /// Shown items in order. Never empty: with nothing selected the icon stays, so the panel can still be opened.
+    var shownMenuBarItems: [MenuBarItem] {
+        let shown = menuBarOrder.filter(isShown)
+        return shown.isEmpty ? [.icon] : shown
+    }
+
+    /// Moves an item one step. `shownOnly` steps over hidden items, so each press moves a visible item.
+    func moveMenuBarItem(_ item: MenuBarItem, by offset: Int, shownOnly: Bool = false) {
+        var order = menuBarOrder
+        guard var i = order.firstIndex(of: item) else { return }
+        var target = i + offset
+        while shownOnly, order.indices.contains(target), !isShown(order[target]) { target += offset }
+        guard order.indices.contains(target) else { return }
+        order.swapAt(i, target)
+        i = target
+        menuBarOrder = order
     }
 
     var statusBarShowMode: Bool {
@@ -169,22 +228,22 @@ final class AppSettings: ObservableObject {
         set { objectWillChange.send(); defaults.set(newValue, forKey: "notifyDischargeComplete") }
     }
 
-    // MARK: - Popover Detail Items
+    // MARK: - Panel Detail Items
 
-    /// Ordered list of enabled detail items in the popover
-    var popoverDetailItems: [PopoverDetailItem] {
+    /// Ordered list of enabled detail items in the panel
+    var panelDetailItems: [PanelDetailItem] {
         get {
-            guard let data = defaults.data(forKey: "popoverDetailItems"),
-                  let items = try? JSONDecoder().decode([PopoverDetailItem].self, from: data)
+            guard let data = defaults.data(forKey: "panelDetailItems"),
+                  let items = try? JSONDecoder().decode([PanelDetailItem].self, from: data)
             else {
-                return PopoverDetailItem.defaultItems
+                return PanelDetailItem.defaultItems
             }
             return items
         }
         set {
             if let data = try? JSONEncoder().encode(newValue) {
                 objectWillChange.send()
-                defaults.set(data, forKey: "popoverDetailItems")
+                defaults.set(data, forKey: "panelDetailItems")
             }
         }
     }

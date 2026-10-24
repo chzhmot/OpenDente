@@ -64,8 +64,8 @@ final class BatteryService: ObservableObject {
         smc.close()
     }
 
-    /// Immediate refresh when popover opens (don't wait for next tick)
-    func popoverDidOpen() {
+    /// Immediate refresh when panel opens (don't wait for next tick)
+    func panelDidOpen() {
         update()
     }
 
@@ -450,7 +450,7 @@ final class BatteryService: ObservableObject {
     // MARK: - Polling
 
     /// Fixed 2s polling interval. SMC reads cost ~300µs total per poll — negligible
-    /// even on battery. A fixed interval keeps the status bar responsive and charging
+    /// even on battery. A fixed interval keeps the menu bar responsive and charging
     /// verification fast, with no measurable impact on battery life.
     static let pollingInterval: TimeInterval = 2
 

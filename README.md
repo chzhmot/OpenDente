@@ -5,8 +5,8 @@ Battery charge limiter for macOS. Menu bar app - pick a target level (e.g. 80%),
 Open-source alternative to AlDente, GPL-3 licensed. Built to stay out of the way: 2-second SMC poll, no animated UI in the background, no telemetry.
 
 <p align="center">
-  <img src="screenshots/popover.png" width="280" alt="Sailing mode">
-  <img src="screenshots/popover-detailed.png" width="280" alt="Detailed view with full SMC and adapter info">
+  <img src="screenshots/panel.png" width="280" alt="Sailing mode">
+  <img src="screenshots/panel-detailed.png" width="280" alt="Detailed view with full SMC and adapter info">
 </p>
 
 ## Status
@@ -34,7 +34,7 @@ In macOS 26.4, Apple shipped their own charge limit in System Settings → Batte
 
 The two are independent firmware gates - both have to be open for charging to happen, so the effective ceiling is whichever is lower. There is no fight loop and no override cycle: set the system to 90% and OpenDente to 80%, you get 80%. Turn the system limit off, OpenDente still works on its own.
 
-OpenDente also detects when it's the system limit (rather than its own write) that's blocking charging, via `NotChargingReason` bit 24, and labels it in the popover so it's clear which gate is holding the line.
+OpenDente also detects when it's the system limit (rather than its own write) that's blocking charging, via `NotChargingReason` bit 24, and labels it in the panel so it's clear which gate is holding the line.
 
 ## Features
 
@@ -48,7 +48,7 @@ OpenDente also detects when it's the system limit (rather than its own write) th
 
 ## What it shows
 
-Even if you don't care about charge limiting itself, the popover surfaces a fair amount of data read directly from the SMC and IORegistry that's otherwise awkward to get at:
+Even if you don't care about charge limiting itself, the panel surfaces a fair amount of data read directly from the SMC and IORegistry that's otherwise awkward to get at:
 
 - Real-time adapter power, system power draw, and battery charge/discharge wattage
 - Battery temperature, cycle count, design and current capacity, health percentage

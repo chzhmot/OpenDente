@@ -84,22 +84,28 @@ struct BatteryState: Equatable {
         return h > 0 ? "\(h)h \(m)m" : "\(m)m"
     }
 
-    /// Build the status bar text from display flags. Shared between AppDelegate and SettingsView.
-    func statusBarText(
-        effectivePercentage pct: Int,
-        showPercentage: Bool,
-        showTemperature: Bool,
-        showPower: Bool
-    ) -> String {
-        var parts: [String] = []
-        if showPercentage { parts.append("\(pct)%") }
-        if showTemperature, let temp = temperature {
-            parts.append(TemperatureDisplay.format(temp, fractionDigits: 0))
+    /// The text of one menu bar item, or nil when it has nothing to show right now.
+    func menuBarText(for item: MenuBarItem, effectivePercentage pct: Int) -> String? {
+        switch item {
+        case .icon:
+            return nil
+        case .percentage:
+            return "\(pct)%"
+        case .timeRemaining:
+            let text = timeRemainingText
+            return text.isEmpty ? nil : text
+        case .temperature:
+            return temperature.map { TemperatureDisplay.format($0, fractionDigits: 0) }
+        case .power:
+            guard let power = systemPower, power > 0 else { return nil }
+            return String(format: "%.0fW", power)
         }
-        if showPower, let power = systemPower, power > 0 {
-            parts.append(String(format: "%.0fW", power))
-        }
-        return parts.joined(separator: " ")
+    }
+
+    /// Time left on battery as "h:mm" like macOS's own menu bar; empty when plugged in or still calculating.
+    var timeRemainingText: String {
+        guard !isPluggedIn, let tte = timeToEmpty, tte > 0, tte < 6000 else { return "" }
+        return String(format: "%d:%02d", tte / 60, tte % 60)
     }
 
     static let unknown = BatteryState(
@@ -110,6 +116,23 @@ struct BatteryState: Equatable {
         batteryPower: nil, notChargingReason: nil, chargerInhibitReason: nil,
         timeToEmpty: nil, timeToFull: nil
     )
+}
+
+/// One part of the menu bar item. The user picks which are shown and in what order.
+enum MenuBarItem: String, CaseIterable, Identifiable {
+    case percentage, timeRemaining, temperature, power, icon
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .icon:          return "Battery Icon"
+        case .percentage:    return "Battery Percentage"
+        case .timeRemaining: return "Time Remaining on Battery"
+        case .temperature:   return "Temperature"
+        case .power:         return "Power Usage"
+        }
+    }
 }
 
 /// The current operational mode of OpenDente
@@ -138,7 +161,7 @@ enum ChargingMode: String, CaseIterable {
         }
     }
 
-    /// Time remaining label and value for the popover detail row.
+    /// Time remaining label and value for the panel detail row.
     /// Returns nil for modes where time remaining should be hidden.
     func timeRemainingDisplay(
         chargeLimit: Int,
@@ -186,7 +209,7 @@ enum ChargingMode: String, CaseIterable {
         }
     }
 
-    /// SF Symbol name for the status bar battery icon
+    /// SF Symbol name for the menu bar battery icon
     func batteryIconName(percentage: Int, isCharging: Bool) -> String {
         if isCharging || self == .charging || self == .topUp {
             return "battery.100percent.bolt"
@@ -215,8 +238,8 @@ enum ChargingMode: String, CaseIterable {
     }
 }
 
-/// Items that can be shown in the popover details grid
-enum PopoverDetailItem: String, CaseIterable, Codable, Identifiable {
+/// Items that can be shown in the panel details grid
+enum PanelDetailItem: String, CaseIterable, Codable, Identifiable {
     case temperature
     case batteryHealth
     case cycleCount
@@ -284,8 +307,8 @@ enum PopoverDetailItem: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    /// Default items shown in the popover (in order)
-    static let defaultItems: [PopoverDetailItem] = [
+    /// Default items shown in the panel (in order)
+    static let defaultItems: [PanelDetailItem] = [
         .temperature, .batteryHealth, .cycleCount,
         .timeRemaining, .systemPower, .adapterPower
     ]
@@ -339,6 +362,7 @@ extension Comparable {
 enum SMCChargingAPI {
     case legacy     // CH0B/CH0C/CH0I (M1/M2/M3)
     case tahoe      // CHTE/CHIE (newer Macs)
+    case firmware   // bfD0/bfE0/bfF0 firmware charge range (CHTE/CH0B removed by newer firmware)
     case adapter    // CHIE/CH0J adapter-cut only (charge-inhibit keys absent)
     case unknown    // Not yet detected
 }

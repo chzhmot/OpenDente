@@ -209,3 +209,25 @@ final class SMCValueTests: XCTestCase {
          UInt8((bits >> 16) & 0xFF), UInt8((bits >> 24) & 0xFF)]
     }
 }
+
+/// The firmware charge range holds the battery by setting a window just below its current charge.
+final class FirmwareChargeLimitTests: XCTestCase {
+
+    func testRangeSitsBelowCurrentPercentage() {
+        let range = FirmwareChargeLimit.range(holding: 75)
+        XCTAssertEqual(range.upper, 73)
+        XCTAssertEqual(range.lower, 71)
+    }
+
+    func testRangeNeverGoesBelowTwoPercentUpper() {
+        let range = FirmwareChargeLimit.range(holding: 3)
+        XCTAssertEqual(range.upper, 2)
+        XCTAssertEqual(range.lower, 0)
+        XCTAssertEqual(FirmwareChargeLimit.range(holding: 0).upper, 2)
+    }
+
+    func testBytesAreLittleEndianUInt32() {
+        XCTAssertEqual(FirmwareChargeLimit.bytes(for: 73), [0x49, 0x00, 0x00, 0x00])
+        XCTAssertEqual(FirmwareChargeLimit.bytes(for: 100), [0x64, 0x00, 0x00, 0x00])
+    }
+}

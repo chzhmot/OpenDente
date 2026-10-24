@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Main popover content shown when clicking the status bar icon
-struct PopoverView: View {
+/// Main panel content shown when clicking the menu bar icon
+struct PanelView: View {
     @ObservedObject var battery = BatteryService.shared
     @ObservedObject var charging = ChargingManager.shared
     @ObservedObject var settings = AppSettings.shared
@@ -150,6 +150,7 @@ struct PopoverView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .focusEffectDisabled()   // no blue keyboard-focus ring when the panel opens
         }
     }
 
@@ -186,7 +187,7 @@ struct PopoverView: View {
                     modeIcon
                         .font(.system(size: 11, weight: .bold))
                     Text("\(displayPercentage)%")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
                 }
                 .foregroundStyle(percentage > 0.3 ? .white : .primary)
                 .padding(.leading, 8)
@@ -234,7 +235,7 @@ struct PopoverView: View {
 
     private var detailsGrid: some View {
         let state = battery.batteryState
-        let items = settings.popoverDetailItems
+        let items = settings.panelDetailItems
 
         return VStack(spacing: 6) {
             ForEach(items) { item in
@@ -256,7 +257,7 @@ struct PopoverView: View {
         }
     }
 
-    private func detailValue(for item: PopoverDetailItem, state: BatteryState) -> (label: String, value: String)? {
+    private func detailValue(for item: PanelDetailItem, state: BatteryState) -> (label: String, value: String)? {
         switch item {
         case .temperature:
             guard let temp = state.temperature else { return nil }
@@ -329,7 +330,7 @@ struct PopoverView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
                 .foregroundStyle(.primary)
         }
     }
@@ -340,7 +341,7 @@ struct PopoverView: View {
         HStack {
             HStack(spacing: 6) {
                 Text("\(settings.chargeLimit)%")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .frame(width: 35)
 
                 Slider(

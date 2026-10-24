@@ -175,6 +175,7 @@ final class ChargingManager: ObservableObject {
                 switch api {
                 case "legacy": self?.chargingAPI = .legacy
                 case "tahoe":  self?.chargingAPI = .tahoe
+                case "firmware": self?.chargingAPI = .firmware
                 case "adapter": self?.chargingAPI = .adapter
                 default:       break
                 }
@@ -235,6 +236,9 @@ final class ChargingManager: ObservableObject {
         } else if smc.keyExists("CH0B") {
             chargingAPI = .legacy
             log.notice("Detected legacy charging API (CH0B/CH0C)")
+        } else if SMCService.hasFirmwareChargeRange(smc) {
+            chargingAPI = .firmware
+            log.notice("Detected firmware charge-range API (bfD0/bfE0/bfF0)")
         } else if smc.keyExists("CHIE") || smc.keyExists("CH0J") {
             chargingAPI = .adapter
             log.notice("Detected adapter-cut charging API (CHIE/CH0J)")
@@ -283,6 +287,7 @@ final class ChargingManager: ObservableObject {
         switch chargingAPI {
         case .tahoe: apiName = "tahoe"
         case .legacy: apiName = "legacy"
+        case .firmware: apiName = "firmware"
         case .adapter: apiName = "adapter"
         case .unknown: apiName = "unknown"
         }
