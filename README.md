@@ -4,11 +4,6 @@ Battery charge limiter for macOS. Menu bar app - pick a target level (e.g. 80%),
 
 Open-source alternative to AlDente, GPL-3 licensed. Built to stay out of the way: 2-second SMC poll, no animated UI in the background, no telemetry.
 
-<p align="center">
-  <img src="screenshots/panel.png" width="280" alt="Sailing mode">
-  <img src="screenshots/panel-detailed.png" width="280" alt="Detailed view with full SMC and adapter info">
-</p>
-
 ## Status
 
 Beta. Tested on two Macs so far: an M4 MacBook on macOS Tahoe (26), and an M1 Max MacBook Pro on macOS Sequoia 15.8.1. Everything else is unverified. If you run it on something else, a [hardware report](../../issues/new?template=hardware-report.yml) would be very welcome.

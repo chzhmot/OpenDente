@@ -34,3 +34,7 @@ build/
 # PDF reference docs
 *.pdf
 
+
+# Local review notes
+REVIEW.md
+REVIEW_LOG.md
