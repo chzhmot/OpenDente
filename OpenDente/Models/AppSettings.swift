@@ -158,12 +158,11 @@ final class AppSettings: ObservableObject {
     /// Moves an item one step. `shownOnly` steps over hidden items, so each press moves a visible item.
     func moveMenuBarItem(_ item: MenuBarItem, by offset: Int, shownOnly: Bool = false) {
         var order = menuBarOrder
-        guard var i = order.firstIndex(of: item) else { return }
+        guard let i = order.firstIndex(of: item) else { return }
         var target = i + offset
         while shownOnly, order.indices.contains(target), !isShown(order[target]) { target += offset }
         guard order.indices.contains(target) else { return }
         order.swapAt(i, target)
-        i = target
         menuBarOrder = order
     }
 

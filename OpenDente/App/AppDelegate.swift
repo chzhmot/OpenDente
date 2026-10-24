@@ -53,6 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in self?.updateStatusBarText() }
             .store(in: &cancellables)
 
+        // Menu bar settings (shown items, order) apply at once. objectWillChange fires before the
+        // value changes, so the refresh is deferred to the next run loop turn.
+        settings.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusBarText() }
+            .store(in: &cancellables)
+
         // Low Power Mode turns the menu bar battery yellow, like macOS does
         NotificationCenter.default
             .publisher(for: .NSProcessInfoPowerStateDidChange)

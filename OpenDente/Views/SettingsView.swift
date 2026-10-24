@@ -55,6 +55,7 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window else { return }
             showInDock(true)
+            windowObservers.forEach(NotificationCenter.default.removeObserver)
             windowObservers = [
                 NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
                     self?.showInDock(true)

@@ -255,10 +255,10 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
             log.info("XPC connection interrupted (transient)")
         }
 
-        connection.resume()
         lock.lock()
         activeClients += 1
         lock.unlock()
+        connection.resume()
         watchdog.receivedHeartbeat()
         log.info("ACCEPTED connection from pid \(connection.processIdentifier, privacy: .public)")
         return true
@@ -321,10 +321,19 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
 
         // The helper only lives while the app does: with the last client gone it exits, and
         // launchd starts it again on demand when the app next connects.
+        // A short grace period: the app drops its old connection and opens a new one on every
+        // reconnect, and the new one may be accepted after the old one's invalidation arrives.
         if isLast {
-            log.info("Last client disconnected — helper exiting")
-            watchdog.stop()
-            exit(0)
+            nonisolated(unsafe) let helper = self   // guarded by `lock`
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                helper.lock.lock()
+                let stillAlone = helper.activeClients == 0
+                helper.lock.unlock()
+                guard stillAlone else { return }
+                log.info("Last client disconnected — helper exiting")
+                helper.watchdog.stop()
+                exit(0)
+            }
         }
     }
 
