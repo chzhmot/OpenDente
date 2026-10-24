@@ -316,7 +316,6 @@ struct ChargingTab: View {
 struct MenuBarTab: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var battery = BatteryService.shared
-    @ObservedObject var charging = ChargingManager.shared
 
     var body: some View {
         Form {
@@ -326,7 +325,6 @@ struct MenuBarTab: View {
                         get: { settings.isShown(item) },
                         set: { settings.setShown(item, $0) }))
                 }
-                Toggle("Charging Mode Icon", isOn: $settings.statusBarShowMode)
             } header: {
                 Text("Show in Menu Bar")
             } footer: {
@@ -368,7 +366,7 @@ struct MenuBarTab: View {
 
     private var statusBarImage: NSImage {
         MenuBarBatteryIcon.statusImage(
-            MenuBarBatteryIcon.content(state: battery.batteryState, mode: charging.mode, settings: settings))
+            MenuBarBatteryIcon.content(state: battery.batteryState, settings: settings))
     }
 }
 

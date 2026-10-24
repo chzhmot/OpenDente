@@ -166,11 +166,6 @@ final class AppSettings: ObservableObject {
         menuBarOrder = order
     }
 
-    var statusBarShowMode: Bool {
-        get { defaults.object(forKey: "statusBarShowMode") as? Bool ?? true }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowMode") }
-    }
-
     // MARK: - Power Flow
 
     var showPowerFlow: Bool {

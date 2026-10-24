@@ -162,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusBarText() {
         guard let button = statusItem?.button else { return }
 
-        let content = MenuBarBatteryIcon.content(state: battery.batteryState, mode: charging.mode, settings: settings)
+        let content = MenuBarBatteryIcon.content(state: battery.batteryState, settings: settings)
         if content != lastIconContent {
             let image = MenuBarBatteryIcon.statusImage(content, leadInset: leadInset)
             contentView.image = image
@@ -308,7 +308,9 @@ enum MenuBarBatteryIcon {
         return segments.isEmpty ? [.icon] : segments
     }
 
-    static func glyph(state: BatteryState, mode: ChargingMode, showMode: Bool) -> Glyph {
+    /// Bolt while charging, plug while plugged in but not charging (sailing, paused, ...), nothing on battery.
+    /// The charging mode itself is only shown in the panel.
+    static func glyph(state: BatteryState) -> Glyph {
         if state.isCharging { return .bolt }
         // Same rule as macOS: plug only when the system itself reports AC power.
         // (On adapter-cut machines the hold looks like "on battery" to macOS,
@@ -331,11 +333,11 @@ enum MenuBarBatteryIcon {
     }
 
     @MainActor
-    static func content(state: BatteryState, mode: ChargingMode, settings: AppSettings) -> Content {
+    static func content(state: BatteryState, settings: AppSettings) -> Content {
         let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
         return Content(segments: segments(state: state, pct: pct, items: settings.shownMenuBarItems),
                        percentage: pct,
-                       glyph: glyph(state: state, mode: mode, showMode: settings.statusBarShowMode),
+                       glyph: glyph(state: state),
                        lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
 

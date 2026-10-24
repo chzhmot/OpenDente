@@ -103,7 +103,6 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(settings.heatProtectionEnabled)
         XCTAssertTrue(settings.statusBarShowIcon)
         XCTAssertTrue(settings.statusBarShowPercentage)
-        XCTAssertTrue(settings.statusBarShowMode)
         XCTAssertTrue(settings.showPowerFlow)
         XCTAssertTrue(settings.controlMagSafeLED)
         XCTAssertTrue(settings.showNotifications)
