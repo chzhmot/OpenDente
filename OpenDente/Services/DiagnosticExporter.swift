@@ -98,15 +98,7 @@ enum DiagnosticExporter {
         r += ", \(state.isCharging ? "charging" : "not charging")"
         r += "\n"
 
-        let apiName: String
-        switch charging.chargingAPI {
-        case .tahoe: apiName = "Tahoe (CHTE/CHIE)"
-        case .legacy: apiName = "Legacy (CH0B/CH0C)"
-        case .firmware: apiName = "Firmware range (bfD0/bfE0/bfF0)"
-        case .adapter: apiName = "Adapter cut (CHIE/CH0J)"
-        case .unknown: apiName = "Not detected"
-        }
-        r += "Charging API: \(apiName)\n"
+        r += "Charging API: \(charging.chargingAPI.displayName)\n"
         r += "Helper: \(HelperInstaller.statusDescription)\n"
         r += "SMC Available: \(battery.smcAvailable ? "Yes" : "No")\n"
 

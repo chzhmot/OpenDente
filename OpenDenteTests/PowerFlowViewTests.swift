@@ -3,6 +3,7 @@ import XCTest
 
 /// Tests for PowerFlowView visual state logic.
 /// Ensures the display never lies — shows only measured data, never derived values.
+@MainActor
 final class PowerFlowViewTests: XCTestCase {
 
     // MARK: - Visual State: Charging

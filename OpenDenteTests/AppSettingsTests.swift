@@ -9,14 +9,21 @@ final class AppSettingsTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        settings = AppSettings(defaults: defaults)
+        // XCTest calls setUp/tearDown on the main thread.
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated {
+            let defaults = UserDefaults(suiteName: test.suiteName)!
+            defaults.removePersistentDomain(forName: test.suiteName)
+            test.settings = AppSettings(defaults: defaults)
+        }
     }
 
     override func tearDown() {
-        UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        settings = nil
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated {
+            UserDefaults.standard.removePersistentDomain(forName: test.suiteName)
+            test.settings = nil
+        }
         super.tearDown()
     }
 

@@ -172,12 +172,8 @@ final class ChargingManager: ObservableObject {
         let client = HelperClient.shared
         client.getChargingAPI { [weak self] api in
             Task { @MainActor in
-                switch api {
-                case "legacy": self?.chargingAPI = .legacy
-                case "tahoe":  self?.chargingAPI = .tahoe
-                case "firmware": self?.chargingAPI = .firmware
-                case "adapter": self?.chargingAPI = .adapter
-                default:       break
+                if let detected = SMCChargingAPI(rawValue: api), detected != .unknown {
+                    self?.chargingAPI = detected
                 }
             }
         }
@@ -283,14 +279,7 @@ final class ChargingManager: ObservableObject {
 
         let state = battery.batteryState
         let pct = state.percentage
-        let apiName: String
-        switch chargingAPI {
-        case .tahoe: apiName = "tahoe"
-        case .legacy: apiName = "legacy"
-        case .firmware: apiName = "firmware"
-        case .adapter: apiName = "adapter"
-        case .unknown: apiName = "unknown"
-        }
+        let apiName = chargingAPI.rawValue
 
         log.notice("""
         === OpenDente Diagnostic Dump ===

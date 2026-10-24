@@ -24,7 +24,7 @@ import Foundation
     /// Get the helper daemon version
     func getVersion(reply: @escaping (String) -> Void)
 
-    /// Get the detected charging API name ("legacy", "tahoe", or "unknown")
+    /// Get the detected charging API name (an `SMCChargingAPI` raw value: "legacy", "tahoe", "firmware", "adapter" or "unknown")
     func getChargingAPI(reply: @escaping (String) -> Void)
 
     /// Set the MagSafe LED color (0x03 = green, 0x04 = orange, 0x00 = system default)

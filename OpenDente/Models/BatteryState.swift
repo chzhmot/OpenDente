@@ -358,11 +358,23 @@ extension Comparable {
     }
 }
 
-/// Which generation of SMC charging keys to use
-enum SMCChargingAPI {
+/// Which generation of SMC charging keys to use.
+/// The raw value is the name the helper reports over XPC (`getChargingAPI`) and logs.
+enum SMCChargingAPI: String {
     case legacy     // CH0B/CH0C/CH0I (M1/M2/M3)
     case tahoe      // CHTE/CHIE (newer Macs)
     case firmware   // bfD0/bfE0/bfF0 firmware charge range (CHTE/CH0B removed by newer firmware)
     case adapter    // CHIE/CH0J adapter-cut only (charge-inhibit keys absent)
     case unknown    // Not yet detected
+
+    /// Name shown in Settings and the diagnostic report
+    var displayName: String {
+        switch self {
+        case .legacy:   return "Legacy (CH0B/CH0C)"
+        case .tahoe:    return "Tahoe (CHTE/CHIE)"
+        case .firmware: return "Firmware range (bfD0/bfE0/bfF0)"
+        case .adapter:  return "Adapter cut (CHIE/CH0J)"
+        case .unknown:  return "Not detected"
+        }
+    }
 }

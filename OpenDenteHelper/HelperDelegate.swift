@@ -25,6 +25,8 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
 
     /// Whether any XPC client is currently connected (accessed under lock)
     private var activeClients = 0
+    /// Bumped on every accepted connection, so a pending exit can tell that a client came and went (under lock)
+    private var acceptedConnections = 0
 
     /// Synced from app — if true, helper inhibits charging independently on sleep.
     /// Accessed under lock (written by XPC, read by IOKit sleep callback).
@@ -257,6 +259,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
 
         lock.lock()
         activeClients += 1
+        acceptedConnections += 1
         lock.unlock()
         connection.resume()
         watchdog.receivedHeartbeat()
@@ -284,8 +287,14 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
             return false
         }
 
-        // For distribution, add team ID: and anchor apple generic and certificate leaf[subject.CN] = "Developer ID Application: ..."
-        let requirementStr = "identifier \"\(HelperConstants.appBundleID)\""
+        // The app must be signed by the same team as this helper. Checking the identifier alone
+        // would let any app signed as com.opendente.app, by anyone, drive the root helper.
+        guard let teamID = Self.ownTeamID else {
+            log.error("Helper has no Team ID in its signature — rejecting pid \(pid, privacy: .public)")
+            return false
+        }
+        let requirementStr = "anchor apple generic and identifier \"\(HelperConstants.appBundleID)\" "
+            + "and certificate leaf[subject.OU] = \"\(teamID)\""
         var requirement: SecRequirement?
         guard SecRequirementCreateWithString(requirementStr as CFString, [], &requirement) == errSecSuccess,
               let req = requirement else {
@@ -302,6 +311,19 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         #endif
     }
 
+    /// Team ID from the helper's own code signature, so no Team ID is compiled in.
+    /// Nil when the helper is unsigned or ad-hoc signed.
+    private static let ownTeamID: String? = {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let info = info as? [String: Any] else { return nil }
+        return info[kSecCodeInfoTeamIdentifier as String] as? String
+    }()
+
     // MARK: - Client Disconnect
 
     private func handleClientDisconnect() {
@@ -309,12 +331,14 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         let state = HelperState.read()
         activeClients = max(0, activeClients - 1)
         let isLast = activeClients == 0
+        let accepted = acceptedConnections
         lock.unlock()
 
         log.info("Client disconnected (last state: \(state?.rawValue ?? "none", privacy: .public))")
 
-        // If charging was inhibited when the app disconnected, reset immediately
-        if state == .inhibited {
+        // If charging was inhibited when the app went away, reset immediately. Not when another
+        // client is still connected: that is the app reconnecting, and it keeps managing charging.
+        if isLast && state == .inhibited {
             log.warning("Client disconnected while charging inhibited — resetting to safe defaults")
             resetChargingDirect()
         }
@@ -323,15 +347,18 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         // launchd starts it again on demand when the app next connects.
         // A short grace period: the app drops its old connection and opens a new one on every
         // reconnect, and the new one may be accepted after the old one's invalidation arrives.
+        // A client that connected in the meantime, even one already gone again, cancels this exit
+        // (its own disconnect schedules a fresh one). The lock is held through exit(0), so no
+        // connection can be accepted between the check and the exit.
         if isLast {
             nonisolated(unsafe) let helper = self   // guarded by `lock`
             DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
                 helper.lock.lock()
-                let stillAlone = helper.activeClients == 0
-                helper.lock.unlock()
-                guard stillAlone else { return }
+                guard helper.activeClients == 0, helper.acceptedConnections == accepted else {
+                    helper.lock.unlock()
+                    return
+                }
                 log.info("Last client disconnected — helper exiting")
-                helper.watchdog.stop()
                 exit(0)
             }
         }
@@ -432,15 +459,11 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 let byte: UInt8 = enable ? 0x08 : 0x00
                 log.info("Writing CHIE: [\(self.hexString([byte]), privacy: .public)]")
                 try smc.writeKey("CHIE", bytes: [byte])
-            case .firmware:
+            case .firmware, .adapter:
                 guard smc.keyExists(adapterKey) else {
                     reply(false, "No adapter key for force discharge")
                     return
                 }
-                let byte: UInt8 = enable ? self.adapterCutByte : 0x00
-                log.info("Writing \(self.adapterKey, privacy: .public): [\(self.hexString([byte]), privacy: .public)] (adapter discharge)")
-                try smc.writeKey(adapterKey, bytes: [byte])
-            case .adapter:
                 let byte: UInt8 = enable ? self.adapterCutByte : 0x00
                 log.info("Writing \(self.adapterKey, privacy: .public): [\(self.hexString([byte]), privacy: .public)] (adapter discharge)")
                 try smc.writeKey(adapterKey, bytes: [byte])
@@ -500,13 +523,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
     }
 
     func getChargingAPI(reply: @escaping (String) -> Void) {
-        switch chargingAPI {
-        case .legacy:  reply("legacy")
-        case .tahoe:   reply("tahoe")
-        case .firmware: reply("firmware")
-        case .adapter: reply("adapter")
-        case .unknown: reply("unknown")
-        }
+        reply(chargingAPI.rawValue)
     }
 
     func syncSleepSettings(stopChargingWhenSleeping: Bool, sleepLEDColor: UInt8, reply: @escaping (Bool) -> Void) {

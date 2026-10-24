@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPopover!
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
-    private var lastIconKey: String?
+    private var lastIconContent: MenuBarBatteryIcon.Content?
 
     private let battery = BatteryService.shared
     private let charging = ChargingManager.shared
@@ -162,18 +162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusBarText() {
         guard let button = statusItem?.button else { return }
 
-        let state = battery.batteryState
-        let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
-
-        let glyph = MenuBarBatteryIcon.glyph(state: state, mode: charging.mode,
-                                             showMode: settings.statusBarShowMode)
-        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let segments = MenuBarBatteryIcon.segments(state: state, pct: pct, items: settings.shownMenuBarItems)
-
-        let key = "\(segments)|\(pct)|\(glyph)|\(lowPower)"
-        if key != lastIconKey {
-            let image = MenuBarBatteryIcon.statusImage(segments: segments, percentage: pct,
-                                                       glyph: glyph, lowPower: lowPower, leadInset: leadInset)
+        let content = MenuBarBatteryIcon.content(state: battery.batteryState, mode: charging.mode, settings: settings)
+        if content != lastIconContent {
+            let image = MenuBarBatteryIcon.statusImage(content, leadInset: leadInset)
             contentView.image = image
             contentView.contentTintColor = image.isTemplate ? Self.menuBarInk : nil
             // Fixed length so the padding is ours, not macOS's. The image is centred, so its
@@ -183,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             contentView.frame = NSRect(x: (button.bounds.width - image.size.width) / 2,
                                        y: (button.bounds.height - image.size.height) / 2,
                                        width: image.size.width, height: image.size.height)
-            lastIconKey = key
+            lastIconContent = content
         }
     }
 
@@ -331,6 +322,23 @@ enum MenuBarBatteryIcon {
         case icon
     }
 
+    /// Everything the menu bar image depends on: equal contents draw the same image.
+    struct Content: Equatable {
+        var segments: [Segment]
+        var percentage: Int
+        var glyph: Glyph
+        var lowPower: Bool
+    }
+
+    @MainActor
+    static func content(state: BatteryState, mode: ChargingMode, settings: AppSettings) -> Content {
+        let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
+        return Content(segments: segments(state: state, pct: pct, items: settings.shownMenuBarItems),
+                       percentage: pct,
+                       glyph: glyph(state: state, mode: mode, showMode: settings.statusBarShowMode),
+                       lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+    }
+
     /// Gaps between segments: text–text, and text–icon (kept tight, like macOS's own item).
     static let textGap: CGFloat = 5
     static let iconGap: CGFloat = 3
@@ -339,9 +347,9 @@ enum MenuBarBatteryIcon {
     /// The whole menu bar item as one image, segments left to right ("97% 3:25 [battery]").
     /// A template image (macOS tints it for light/dark menu bars) unless the battery is
     /// coloured (low battery / Low Power Mode).
-    static func statusImage(segments: [Segment], percentage: Int, glyph: Glyph, lowPower: Bool,
-                            leadInset: CGFloat = 0) -> NSImage {
-        let pct = max(0, min(100, percentage))
+    static func statusImage(_ content: Content, leadInset: CGFloat = 0) -> NSImage {
+        let segments = content.segments, glyph = content.glyph, lowPower = content.lowPower
+        let pct = max(0, min(100, content.percentage))
         let low = pct <= lowThreshold && glyph == .none
         let coloured = low || lowPower
 
@@ -388,20 +396,6 @@ enum MenuBarBatteryIcon {
         return image
     }
 
-    static func image(percentage: Int, glyph: Glyph, lowPower: Bool = false) -> NSImage {
-        let pct = max(0, min(100, percentage))
-        let low = pct <= lowThreshold && glyph == .none
-        let coloured = low || lowPower
-
-        let image = NSImage(size: iconSize, flipped: false) { _ in
-            draw(percentage: pct, glyph: glyph, low: low, lowPower: lowPower)
-            return true
-        }
-        image.isTemplate = !coloured
-        image.accessibilityDescription = "Battery \(pct)%"
-        return image
-    }
-
     // MARK: Drawing
 
     private static func draw(percentage pct: Int, glyph: Glyph, low: Bool, lowPower: Bool) {
@@ -440,18 +434,19 @@ enum MenuBarBatteryIcon {
         }
 
         // 3. Glyph with knocked-out halo
-        if glyph == .plug {
-            drawPlug(centeredOn: body, ink: ink)
-            return
+        switch glyph {
+        case .none: return
+        case .plug: drawPlug(centeredOn: body, ink: ink)
+        case .bolt: drawBolt(centeredOn: body, ink: ink)
         }
-        let spec: (names: [String], height: CGFloat, centerY: CGFloat)? = switch glyph {
-            case .bolt: (["bolt.fill"], 11.6, 6.4)
-            case .plug: nil   // drawn as a vector path, see drawPlug
-            case .none: nil
-        }
-        guard let spec, let g = spec.names.lazy.compactMap({ symbol($0, weight: .semibold) }).first else { return }
-        let h = spec.height, w = h * g.size.width / g.size.height
-        let r = NSRect(x: body.midX - w / 2, y: body.minY + spec.centerY - h / 2, width: w, height: h)
+    }
+
+    /// `bolt.fill`, 11.6 pt tall, centred 6.4 pt above the body's bottom edge.
+    private static func drawBolt(centeredOn body: NSRect, ink: NSColor) {
+        guard let g = symbol("bolt.fill", weight: .semibold) else { return }
+        let h: CGFloat = 11.6, centerY: CGFloat = 6.4
+        let w = h * g.size.width / g.size.height
+        let r = NSRect(x: body.midX - w / 2, y: body.minY + centerY - h / 2, width: w, height: h)
 
         // Halo: erase the symbol's silhouette grown by ~0.75 pt (16 offset copies, vector)
         let halo: CGFloat = 0.75

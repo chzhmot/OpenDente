@@ -53,15 +53,20 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            // Drop the old window's observers first, also when the view leaves its window
+            // (which it always does before it is freed).
+            windowObservers.forEach(NotificationCenter.default.removeObserver)
+            windowObservers = []
+            titleObservation = nil
             guard let window else { return }
             showInDock(true)
-            windowObservers.forEach(NotificationCenter.default.removeObserver)
+            // queue: .main, so the blocks run on the main actor.
             windowObservers = [
                 NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
-                    self?.showInDock(true)
+                    MainActor.assumeIsolated { self?.showInDock(true) }
                 },
                 NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
-                    self?.showInDock(false)
+                    MainActor.assumeIsolated { self?.showInDock(false) }
                 },
             ]
             // Remember size and position across openings and app restarts.
@@ -362,13 +367,8 @@ struct MenuBarTab: View {
     }
 
     private var statusBarImage: NSImage {
-        let state = battery.batteryState
-        let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
-        let glyph = MenuBarBatteryIcon.glyph(state: state, mode: charging.mode,
-                                             showMode: settings.statusBarShowMode)
-        let segments = MenuBarBatteryIcon.segments(state: state, pct: pct, items: settings.shownMenuBarItems)
-        return MenuBarBatteryIcon.statusImage(segments: segments, percentage: pct, glyph: glyph,
-                                              lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        MenuBarBatteryIcon.statusImage(
+            MenuBarBatteryIcon.content(state: battery.batteryState, mode: charging.mode, settings: settings))
     }
 }
 
@@ -596,7 +596,7 @@ struct BatteryInfoTab: View {
 
             Section("Control") {
                 infoRow("Mode", value: charging.mode.displayName)
-                infoRow("Charging API", value: chargingAPIName)
+                infoRow("Charging API", value: charging.chargingAPI.displayName)
                 if settings.controlMagSafeLED {
                     infoRow("MagSafe LED", value: ledColorName)
                 }
@@ -616,16 +616,6 @@ struct BatteryInfoTab: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    private var chargingAPIName: String {
-        switch charging.chargingAPI {
-        case .legacy: return "Legacy (CH0B/CH0C)"
-        case .tahoe:  return "Tahoe (CHTE/CHIE)"
-        case .firmware: return "Firmware range (bfD0/bfE0/bfF0)"
-        case .adapter: return "Adapter cut (CHIE/CH0J)"
-        case .unknown: return "Not detected"
-        }
     }
 
     private var ledColorName: String {

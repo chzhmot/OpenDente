@@ -10,16 +10,23 @@ final class NotificationServiceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        service = NotificationService()
-        settings = AppSettings(defaults: defaults)
+        // XCTest calls setUp/tearDown on the main thread.
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated {
+            let defaults = UserDefaults(suiteName: test.suiteName)!
+            defaults.removePersistentDomain(forName: test.suiteName)
+            test.service = NotificationService()
+            test.settings = AppSettings(defaults: defaults)
+        }
     }
 
     override func tearDown() {
-        UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        service = nil
-        settings = nil
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated {
+            UserDefaults.standard.removePersistentDomain(forName: test.suiteName)
+            test.service = nil
+            test.settings = nil
+        }
         super.tearDown()
     }
 

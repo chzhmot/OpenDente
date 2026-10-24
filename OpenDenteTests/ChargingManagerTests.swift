@@ -147,30 +147,37 @@ final class ChargingManagerTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        settings = AppSettings(defaults: defaults)
-        mock = MockChargingControl()
-        sleepMock = MockSleepAssertionControl()
-        manager = ChargingManager(settings: settings, helper: mock, battery: .shared,
-                                  sleepAssertion: sleepMock)
-        manager.chargingAPI = .legacy
-        manager.isHelperInstalled = true
+        // XCTest calls setUp/tearDown on the main thread.
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated {
+            let defaults = UserDefaults(suiteName: test.suiteName)!
+            defaults.removePersistentDomain(forName: test.suiteName)
+            test.settings = AppSettings(defaults: defaults)
+            test.mock = MockChargingControl()
+            test.sleepMock = MockSleepAssertionControl()
+            test.manager = ChargingManager(settings: test.settings, helper: test.mock, battery: .shared,
+                                           sleepAssertion: test.sleepMock)
+            test.manager.chargingAPI = .legacy
+            test.manager.isHelperInstalled = true
 
-        // Explicit preconditions — tests that need sailing/heat/sleep enable it themselves
-        settings.sailingModeEnabled = false
-        settings.heatProtectionEnabled = false
-        settings.controlMagSafeLED = false
-        settings.stopChargingWhenSleeping = false
-        settings.disableSleepUntilChargeLimit = false
+            // Explicit preconditions — tests that need sailing/heat/sleep enable it themselves
+            test.settings.sailingModeEnabled = false
+            test.settings.heatProtectionEnabled = false
+            test.settings.controlMagSafeLED = false
+            test.settings.stopChargingWhenSleeping = false
+            test.settings.disableSleepUntilChargeLimit = false
+        }
     }
 
     override func tearDown() {
-        UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        manager = nil
-        mock = nil
-        sleepMock = nil
-        settings = nil
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated {
+            UserDefaults.standard.removePersistentDomain(forName: test.suiteName)
+            test.manager = nil
+            test.mock = nil
+            test.sleepMock = nil
+            test.settings = nil
+        }
         super.tearDown()
     }
 
