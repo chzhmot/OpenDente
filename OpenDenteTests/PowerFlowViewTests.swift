@@ -74,6 +74,13 @@ final class PowerFlowViewTests: XCTestCase {
         XCTAssertEqual(visual, .pluggedInStopping)
     }
 
+    func testPaused_staleIOKitFlagButNoBatteryPower_showsPaused() {
+        // IOKit still says charging up to ~2 min after the stop; battery power already 0 W
+        let state = makeState(isCharging: true, isPluggedIn: true, batteryPower: 0.0, systemPower: 5.0)
+        let visual = PowerFlowView.resolveVisualState(battery: state, mode: .paused)
+        XCTAssertEqual(visual, .pluggedInPaused)
+    }
+
     func testStarting_chargingModeButIOKitNotYetConfirmed() {
         let state = makeState(isCharging: false, isPluggedIn: true, batteryPower: 0.0, systemPower: 14.0)
         let visual = PowerFlowView.resolveVisualState(battery: state, mode: .charging)

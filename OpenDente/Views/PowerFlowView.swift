@@ -46,8 +46,8 @@ struct PowerFlowView: View {
         }
 
         // Transitional: inhibit sent but hardware still charging
-        if isInhibited && battery.isCharging {
-            return .pluggedInStopping
+        if isInhibited {
+            return battery.hasStoppedCharging ? .pluggedInPaused : .pluggedInStopping
         }
 
         // Actively charging with measurable battery power.

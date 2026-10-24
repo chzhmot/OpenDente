@@ -65,6 +65,13 @@ struct BatteryState: Equatable {
         return Double(max) / Double(design) * 100.0
     }
 
+    /// Whether the battery has stopped taking charge. IOKit's isCharging can stay true for up to
+    /// ~2 minutes after the hardware stops; the SMC battery power (B0AP) follows within seconds,
+    /// so a reading at or below 0.1 W wins over the stale flag.
+    var hasStoppedCharging: Bool {
+        !isCharging || (batteryPower.map { $0 <= 0.1 } ?? false)
+    }
+
     /// Returns hardware percentage if enabled and available, otherwise macOS percentage
     func effectivePercentage(useHardware: Bool) -> Int {
         if useHardware, let hw = hardwarePercentage { return hw }

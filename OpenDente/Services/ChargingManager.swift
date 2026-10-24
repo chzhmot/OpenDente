@@ -480,7 +480,7 @@ final class ChargingManager: ObservableObject {
         let inhibitElapsed = lastInhibitTime.map { Date().timeIntervalSince($0) } ?? .infinity
         let totalInhibitElapsed = firstInhibitTime.map { Date().timeIntervalSince($0) } ?? .infinity
         if (mode == .paused || mode == .sailing || mode == .heatProtection)
-            && state.isCharging {
+            && !state.hasStoppedCharging {
             if inhibitElapsed >= 15 && inhibitRetryCount < 3 {
                 inhibitRetryCount += 1
                 log.warning("IOKit still reports charging in \(self.mode.displayName, privacy: .public) mode — re-sending inhibit (\(self.inhibitRetryCount, privacy: .public)/3, \(String(format: "%.0f", totalInhibitElapsed), privacy: .public)s since first inhibit) | IOKit: isCharging=\(state.isCharging, privacy: .public), pct=\(pct, privacy: .public)%, adapterPower=\(String(format: "%.1f", state.adapterPower ?? -1), privacy: .public)W, batteryPower=\(String(format: "%.1f", state.batteryPower ?? 0), privacy: .public)W")
@@ -491,7 +491,7 @@ final class ChargingManager: ObservableObject {
                 NotificationService.shared.send(.inhibitFailed, settings: settings)
             }
         } else if (mode == .paused || mode == .sailing || mode == .heatProtection)
-                    && !state.isCharging && lastInhibitTime != nil
+                    && state.hasStoppedCharging && lastInhibitTime != nil
                     && inhibitElapsed >= 2 {
             // Require ≥2s since inhibit write to avoid confirming in the same evaluateState
             // call that sent the inhibit (e.g. cable plug with stale SMC inhibit).

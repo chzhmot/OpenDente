@@ -311,7 +311,7 @@ enum MenuBarBatteryIcon {
     /// Bolt while charging, plug while plugged in but not charging (sailing, paused, ...), nothing on battery.
     /// The charging mode itself is only shown in the panel.
     static func glyph(state: BatteryState) -> Glyph {
-        if state.isCharging { return .bolt }
+        if !state.hasStoppedCharging { return .bolt }
         // Same rule as macOS: plug only when the system itself reports AC power.
         // (On adapter-cut machines the hold looks like "on battery" to macOS,
         // and a real unplug during the hold is indistinguishable — so no plug.)
@@ -443,10 +443,11 @@ enum MenuBarBatteryIcon {
         }
     }
 
-    /// `bolt.fill`, 11.6 pt tall, centred 6.4 pt above the body's bottom edge.
+    /// `bolt.fill`, 13.6 pt tall, centred on the body: like macOS's own, it overshoots the
+    /// shell top and bottom (0.2–13.8 pt in the 14 pt canvas).
     private static func drawBolt(centeredOn body: NSRect, ink: NSColor) {
         guard let g = symbol("bolt.fill", weight: .semibold) else { return }
-        let h: CGFloat = 11.6, centerY: CGFloat = 6.4
+        let h: CGFloat = 13.6, centerY: CGFloat = 6.0
         let w = h * g.size.width / g.size.height
         let r = NSRect(x: body.midX - w / 2, y: body.minY + centerY - h / 2, width: w, height: h)
 

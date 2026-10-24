@@ -75,6 +75,7 @@ func makeBatteryState(
     isPluggedIn: Bool = true,
     temperature: Double? = 25.0,
     adapterPower: Double? = nil,
+    batteryPower: Double? = nil,
     notChargingReason: UInt64? = nil,
     chargerInhibitReason: UInt64? = nil,
     timeToEmpty: Int? = nil,
@@ -95,7 +96,7 @@ func makeBatteryState(
         systemPower: nil,
         adapterPower: adapterPower,
         adapterInfo: nil,
-        batteryPower: nil,
+        batteryPower: batteryPower,
         notChargingReason: notChargingReason,
         chargerInhibitReason: chargerInhibitReason,
         timeToEmpty: timeToEmpty,
@@ -1225,6 +1226,31 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertEqual(manager.mode, .paused)
         let reInhibitCount = mock.calls.filter { $0 == .inhibitCharging }.count
         XCTAssertEqual(reInhibitCount, 1, "Should re-send inhibit when system still reports charging")
+    }
+
+    func testVerification_staleIOKitFlagWithNoBatteryPower_doesNotResend() {
+        // IOKit's isCharging lags up to ~2 min; SMC battery power already reads 0 W
+        manager.evaluateState(makeBatteryState(percentage: 90))
+        manager.lastInhibitTime = Date().addingTimeInterval(-16)
+        mock.clearCalls()
+        manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true, batteryPower: 0.0))
+        XCTAssertTrue(mock.calls.filter { $0 == .inhibitCharging }.isEmpty,
+            "Battery power is 0 W: charging has stopped, no re-send and no failure notification")
+    }
+
+    func testHasStoppedCharging_usesBatteryPowerOverStaleIOKitFlag() {
+        XCTAssertTrue(makeBatteryState(isCharging: true, batteryPower: 0.0).hasStoppedCharging)
+        XCTAssertTrue(makeBatteryState(isCharging: false, batteryPower: nil).hasStoppedCharging)
+        XCTAssertFalse(makeBatteryState(isCharging: true, batteryPower: 8.0).hasStoppedCharging)
+        XCTAssertFalse(makeBatteryState(isCharging: true, batteryPower: nil).hasStoppedCharging,
+            "Without a power reading, IOKit is all there is")
+    }
+
+    func testMenuBarGlyph_plugOnceBatteryPowerStops() {
+        let held = makeBatteryState(isCharging: true, isPluggedIn: true, batteryPower: 0.0)
+        XCTAssertEqual(MenuBarBatteryIcon.glyph(state: held), .plug)
+        let charging = makeBatteryState(isCharging: true, isPluggedIn: true, batteryPower: 30.0)
+        XCTAssertEqual(MenuBarBatteryIcon.glyph(state: charging), .bolt)
     }
 
     func testVerification_pausedAndNotCharging_doesNotResend() {
