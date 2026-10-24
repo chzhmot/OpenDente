@@ -3,6 +3,7 @@
 #
 #   make generate   regenerate OpenDente.xcodeproj from project.yml, with your Team ID
 #   make build      signed Debug build (needs .team-id)
+#   make run        quit OpenDente and open the signed build (the helper only registers from it)
 #   make test       unit tests, no signing needed
 #   make clean      remove build output
 #
@@ -15,8 +16,13 @@ PROJECT     := OpenDente.xcodeproj
 SCHEME      := OpenDente
 DESTINATION := platform=macOS,arch=arm64
 DERIVED     := build/DerivedData
+# Tests build unsigned. Into DERIVED they would overwrite the signed app: macOS kills the
+# running helper (its binary changed) and launchd refuses the unsigned one, leaving the
+# firmware charge limit set with nothing to clear it.
+# .noindex keeps Spotlight from offering this unsigned OpenDente.app.
+TEST_DERIVED := build/TestDerivedData.noindex
 
-.PHONY: generate build test clean check-team team-id
+.PHONY: generate build run test clean check-team team-id
 
 # XcodeGen fills ${DEVELOPMENT_TEAM} in project.yml from the environment, so the generated
 # project carries the real Team ID and SweetPad / plain xcodebuild sign with it.
@@ -29,13 +35,19 @@ build: check-team generate
 		-allowProvisioningUpdates build
 	@echo "Built: $(DERIVED)/Build/Products/Debug/OpenDente.app"
 
+# Other copies named OpenDente.app (editor build server, tests) are ad-hoc or unsigned and
+# can't register the helper, so open this one by path rather than through Spotlight.
+run:
+	-pkill -x OpenDente
+	open "$(DERIVED)/Build/Products/Debug/OpenDente.app"
+
 test: generate
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
-		-destination '$(DESTINATION)' -derivedDataPath $(DERIVED) \
+		-destination '$(DESTINATION)' -derivedDataPath $(TEST_DERIVED) \
 		CODE_SIGNING_ALLOWED=NO test
 
 clean:
-	rm -rf $(DERIVED)
+	rm -rf $(DERIVED) $(TEST_DERIVED)
 
 check-team:
 	@test -n "$(TEAM_ID)" || { \
