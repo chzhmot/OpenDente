@@ -635,7 +635,7 @@ final class ChargingManagerTests: XCTestCase {
     // =========================================================================
     // MARK: - Mode Priority Order
     // =========================================================================
-    // Heat protection > Top Up > Calibrating > Discharging > normal limit logic
+    // Heat protection > Charge to Maximum > Calibrating > Discharging > normal limit logic
 
     func testPriority_heatProtectionOverridesCharging() {
         settings.heatProtectionEnabled = true
@@ -663,10 +663,10 @@ final class ChargingManagerTests: XCTestCase {
             "Heat protection must also inhibit charging")
     }
 
-    func testPriority_topUpNotOverriddenByLimit() {
-        manager.startTopUp()
+    func testPriority_chargeMaxNotOverriddenByLimit() {
+        manager.startChargeMax()
         manager.evaluateState(makeBatteryState(percentage: 95))
-        XCTAssertEqual(manager.mode, .topUp, "Top Up should persist above charge limit")
+        XCTAssertEqual(manager.mode, .chargeMax, "Charge to Maximum should persist above charge limit")
     }
 
     func testPriority_calibrationNotOverridden() {
@@ -675,54 +675,54 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertEqual(manager.mode, .calibrating)
     }
 
-    func testPriority_heatProtectionEvenDuringTopUp() {
+    func testPriority_heatProtectionEvenDuringChargeMax() {
         settings.heatProtectionEnabled = true
         settings.heatProtectionTemp = 35.0
 
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
 
         // Heat spike during top up — heat protection should take priority
         manager.evaluateState(makeBatteryState(percentage: 90, temperature: 36.0))
         XCTAssertEqual(manager.mode, .heatProtection,
-            "Heat protection must override even Top Up mode")
+            "Heat protection must override even Charge to Maximum mode")
     }
 
     // =========================================================================
-    // MARK: - Top Up
+    // MARK: - Charge to Maximum
     // =========================================================================
 
-    func testTopUp_staysUntilUnplugged() {
-        manager.startTopUp()
+    func testChargeMax_staysUntilUnplugged() {
+        manager.startChargeMax()
         XCTAssertEqual(mock.calls, [.enableCharging])
 
         manager.evaluateState(makeBatteryState(percentage: 90))
         manager.evaluateState(makeBatteryState(percentage: 100))
-        XCTAssertEqual(manager.mode, .topUp)
+        XCTAssertEqual(manager.mode, .chargeMax)
 
         // Only ends on unplug
         manager.evaluateState(makeBatteryState(percentage: 100, isPluggedIn: false))
-        XCTAssertNotEqual(manager.mode, .topUp)
+        XCTAssertNotEqual(manager.mode, .chargeMax)
     }
 
-    func testCancelTopUp_inhibitsAndGoesIdle() {
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
+    func testCancelChargeMax_inhibitsAndGoesIdle() {
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
         mock.reset()
 
         // Cancel → inhibit charging as safe default, mode = idle
         // Next poll will re-evaluate to the correct mode
-        manager.cancelTopUp()
+        manager.cancelChargeMax()
         XCTAssertEqual(manager.mode, .idle)
         XCTAssertEqual(mock.calls, [.inhibitCharging],
-            "Cancel Top Up must inhibit charging as a safe default")
+            "Cancel Charge to Maximum must inhibit charging as a safe default")
     }
 
-    func testCancelTopUp_nextPollReEvaluatesCorrectly() {
-        manager.startTopUp()
+    func testCancelChargeMax_nextPollReEvaluatesCorrectly() {
+        manager.startChargeMax()
         mock.reset()
 
-        manager.cancelTopUp()
+        manager.cancelChargeMax()
         XCTAssertEqual(manager.mode, .idle)
         mock.reset()
 
@@ -732,12 +732,12 @@ final class ChargingManagerTests: XCTestCase {
             "After cancel, next poll above limit should pause")
     }
 
-    func testCancelTopUp_nextPoll_belowLimit_charges() {
+    func testCancelChargeMax_nextPoll_belowLimit_charges() {
         settings.chargeLimit = 90
-        manager.startTopUp()
+        manager.startChargeMax()
         mock.reset()
 
-        manager.cancelTopUp()
+        manager.cancelChargeMax()
         mock.reset()
 
         // Next poll: below limit → charge
@@ -746,25 +746,25 @@ final class ChargingManagerTests: XCTestCase {
             "After cancel, next poll below limit should charge")
     }
 
-    func testCancelTopUp_whenNotInTopUp_doesNothing() {
+    func testCancelChargeMax_whenNotInChargeMax_doesNothing() {
         manager.evaluateState(makeBatteryState(percentage: 50))
         XCTAssertEqual(manager.mode, .charging)
         mock.reset()
 
-        manager.cancelTopUp()
+        manager.cancelChargeMax()
         XCTAssertEqual(manager.mode, .charging,
-            "Cancel when not in Top Up should have no effect")
+            "Cancel when not in Charge to Maximum should have no effect")
         XCTAssertTrue(mock.calls.isEmpty)
     }
 
-    func testCancelTopUp_nextPoll_inSailingRange_sails() {
+    func testCancelChargeMax_nextPoll_inSailingRange_sails() {
         settings.sailingModeEnabled = true
         settings.sailingRange = 10  // lower bound = 70
 
-        manager.startTopUp()
+        manager.startChargeMax()
         mock.reset()
 
-        manager.cancelTopUp()
+        manager.cancelChargeMax()
         mock.reset()
 
         // Next poll: in sailing range → sail
@@ -773,25 +773,25 @@ final class ChargingManagerTests: XCTestCase {
             "After cancel, next poll in sailing range should sail")
     }
 
-    func testTopUp_unplugged_endsTopUp() {
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
+    func testChargeMax_unplugged_endsChargeMax() {
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
         mock.reset()
 
-        // Unplug during Top Up — should end Top Up and go to onBattery
+        // Unplug during Charge to Maximum — should end Charge to Maximum and go to onBattery
         manager.evaluateState(makeBatteryState(percentage: 85, isPluggedIn: false))
         XCTAssertEqual(manager.mode, .onBattery)
     }
 
-    func testTopUp_lostAfterHeatProtection() {
-        // This documents CURRENT behavior: Top Up is lost after heat protection.
-        // Heat protection overrides topUp → after cooldown, normal logic resumes,
-        // mode is no longer .topUp so charging goes to paused/sailing/charging.
+    func testChargeMax_lostAfterHeatProtection() {
+        // This documents CURRENT behavior: Charge to Maximum is lost after heat protection.
+        // Heat protection overrides chargeMax → after cooldown, normal logic resumes,
+        // mode is no longer .chargeMax so charging goes to paused/sailing/charging.
         settings.heatProtectionEnabled = true
         settings.heatProtectionTemp = 35.0
 
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
 
         // Heat spike interrupts top up
         manager.evaluateState(makeBatteryState(percentage: 85, temperature: 36.0))
@@ -801,21 +801,21 @@ final class ChargingManagerTests: XCTestCase {
         manager.heatProtectionTimer = Date().addingTimeInterval(-301)
         manager.evaluateState(makeBatteryState(percentage: 85, temperature: 33.0))
 
-        // Top Up is lost — mode goes to paused (85% > 80% limit)
+        // Charge to Maximum is lost — mode goes to paused (85% > 80% limit)
         XCTAssertEqual(manager.mode, .paused,
-            "Known behavior: Top Up is lost after heat protection. " +
-            "User must restart Top Up manually.")
-        XCTAssertNotEqual(manager.mode, .topUp)
+            "Known behavior: Charge to Maximum is lost after heat protection. " +
+            "User must restart Charge to Maximum manually.")
+        XCTAssertNotEqual(manager.mode, .chargeMax)
     }
 
-    func testTopUp_doubleStart_noExtraEnableCall() {
-        manager.startTopUp()
+    func testChargeMax_doubleStart_noExtraEnableCall() {
+        manager.startChargeMax()
         XCTAssertEqual(mock.calls.count, 1)
 
-        // Starting again while already in topUp — should still work
-        manager.startTopUp()
+        // Starting again while already in chargeMax — should still work
+        manager.startChargeMax()
         XCTAssertEqual(mock.calls.count, 2, "Double start sends enableCharging again (idempotent)")
-        XCTAssertEqual(manager.mode, .topUp)
+        XCTAssertEqual(manager.mode, .chargeMax)
     }
 
     // =========================================================================
@@ -946,11 +946,11 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertTrue(mock.calls.isEmpty, "No SMC writes on unknown API")
     }
 
-    func testUnknownAPI_startTopUp_blocked() {
+    func testUnknownAPI_startChargeMax_blocked() {
         manager.chargingAPI = .unknown
-        manager.startTopUp()
-        XCTAssertNotEqual(manager.mode, .topUp,
-            "startTopUp with unknown API must not set mode to .topUp")
+        manager.startChargeMax()
+        XCTAssertNotEqual(manager.mode, .chargeMax,
+            "startChargeMax with unknown API must not set mode to .chargeMax")
         XCTAssertTrue(mock.calls.isEmpty, "No SMC writes on unknown API")
     }
 
@@ -970,11 +970,11 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertTrue(mock.calls.isEmpty)
     }
 
-    func testHelperNotInstalled_startTopUp_blocked() {
+    func testHelperNotInstalled_startChargeMax_blocked() {
         manager.isHelperInstalled = false
-        manager.startTopUp()
-        XCTAssertNotEqual(manager.mode, .topUp,
-            "startTopUp without helper must not set mode to .topUp")
+        manager.startChargeMax()
+        XCTAssertNotEqual(manager.mode, .chargeMax,
+            "startChargeMax without helper must not set mode to .chargeMax")
         XCTAssertTrue(mock.calls.isEmpty)
     }
 
@@ -1338,14 +1338,14 @@ final class ChargingManagerTests: XCTestCase {
         }), "LED control disabled — no setMagSafeLED calls")
     }
 
-    func testMagSafeLED_topUp_sendsOrange() {
+    func testMagSafeLED_chargeMax_sendsOrange() {
         settings.controlMagSafeLED = true
         manager.helperVersion = HelperConstants.helperVersion
         // Start top up, then evaluate with IOKit confirming charging
-        manager.startTopUp()
+        manager.startChargeMax()
         manager.evaluateState(makeBatteryState(percentage: 50, isCharging: true))
         XCTAssertEqual(manager.lastLEDColor, HelperConstants.ledOrange,
-            "Top Up with IOKit isCharging=true should have LED orange")
+            "Charge to Maximum with IOKit isCharging=true should have LED orange")
     }
 
     func testMagSafeLED_sailing_sendsGreen() {
@@ -1564,17 +1564,17 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertEqual(mock.calls, [.inhibitCharging])
     }
 
-    func testWillSleep_inTopUpMode_inhibitsCharging() {
+    func testWillSleep_inChargeMaxMode_inhibitsCharging() {
         settings.stopChargingWhenSleeping = true
         manager.evaluateState(makeBatteryState(percentage: 60, isCharging: true))
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
         mock.clearCalls()
 
         manager.handleWillSleep()
 
         XCTAssertEqual(mock.calls, [.inhibitCharging])
-        XCTAssertEqual(manager.modeBeforeSleep, .topUp)
+        XCTAssertEqual(manager.modeBeforeSleep, .chargeMax)
     }
 
     func testWillSleep_whileDischarging_withStopCharging_stopsDischargeAndInhibits() {
@@ -1789,16 +1789,16 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertFalse(sleepMock.isPreventingSleep)
     }
 
-    func testSleepAssertion_topUpMode_noAssertion() {
+    func testSleepAssertion_chargeMaxMode_noAssertion() {
         settings.disableSleepUntilChargeLimit = true
         manager.evaluateState(makeBatteryState(percentage: 60, isCharging: true))
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
-        // Re-evaluate with topUp mode
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
+        // Re-evaluate with chargeMax mode
         manager.evaluateState(makeBatteryState(percentage: 65, isCharging: true))
-        // topUp returns early in evaluateState, mode stays .topUp which is not .charging/.discharging
+        // chargeMax returns early in evaluateState, mode stays .chargeMax which is not .charging/.discharging
         XCTAssertFalse(sleepMock.isPreventingSleep,
-            "Top Up should not prevent sleep (it's a user override, not 'until charge limit')")
+            "Charge to Maximum should not prevent sleep (it's a user override, not 'until charge limit')")
     }
 
     func testSleepAssertion_sailingMode_noAssertion() {
@@ -1968,30 +1968,30 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertFalse(manager.systemChargeLimitConflict)
     }
 
-    func testSystemChargeLimitConflict_detectedDuringTopUp() {
+    func testSystemChargeLimitConflict_detectedDuringChargeMax() {
         // Start top up
         manager.evaluateState(makeBatteryState(percentage: 50, isCharging: true))
-        manager.startTopUp()
-        XCTAssertEqual(manager.mode, .topUp)
+        manager.startChargeMax()
+        XCTAssertEqual(manager.mode, .chargeMax)
         XCTAssertFalse(manager.systemChargeLimitConflict)
 
         // System blocks charging during top up
         manager.evaluateState(makeBatteryState(
             percentage: 80, isCharging: false, notChargingReason: 0x1000000))
-        XCTAssertEqual(manager.mode, .topUp) // stays in topUp
+        XCTAssertEqual(manager.mode, .chargeMax) // stays in chargeMax
         XCTAssertTrue(manager.systemChargeLimitConflict)
     }
 
-    func testSystemChargeLimitConflict_clearsWhenTopUpCancelled() {
+    func testSystemChargeLimitConflict_clearsWhenChargeMaxCancelled() {
         // In conflict during top up
         manager.evaluateState(makeBatteryState(percentage: 50, isCharging: true))
-        manager.startTopUp()
+        manager.startChargeMax()
         manager.evaluateState(makeBatteryState(
             percentage: 80, isCharging: false, notChargingReason: 0x1000000))
         XCTAssertTrue(manager.systemChargeLimitConflict)
 
         // Cancel top up → mode changes → conflict clears
-        manager.cancelTopUp()
+        manager.cancelChargeMax()
         XCTAssertFalse(manager.systemChargeLimitConflict)
     }
 

@@ -106,26 +106,26 @@ final class DisplayLogicTests: XCTestCase {
         XCTAssertEqual(result100?.label, "Time to 100%")
     }
 
-    // MARK: - timeRemainingDisplay: Top Up
+    // MARK: - timeRemainingDisplay: Charge to Maximum
 
-    func testTopUp_showsTimeToFull() {
-        let result = ChargingMode.topUp.timeRemainingDisplay(
+    func testChargeMax_showsTimeToFull() {
+        let result = ChargingMode.chargeMax.timeRemainingDisplay(
             chargeLimit: 80, percentage: 85, timeToFull: 30, timeToEmpty: nil
         )
         XCTAssertEqual(result?.label, "Time to Full")
         XCTAssertEqual(result?.value, "30m")
     }
 
-    func testTopUp_showsChargedAt100() {
-        let result = ChargingMode.topUp.timeRemainingDisplay(
+    func testChargeMax_showsChargedAt100() {
+        let result = ChargingMode.chargeMax.timeRemainingDisplay(
             chargeLimit: 80, percentage: 100, timeToFull: 0, timeToEmpty: nil
         )
         XCTAssertEqual(result?.label, "Time to Full")
         XCTAssertEqual(result?.value, "Charged")
     }
 
-    func testTopUp_showsCalculatingWhenNoData() {
-        let result = ChargingMode.topUp.timeRemainingDisplay(
+    func testChargeMax_showsCalculatingWhenNoData() {
+        let result = ChargingMode.chargeMax.timeRemainingDisplay(
             chargeLimit: 80, percentage: 85, timeToFull: nil, timeToEmpty: nil
         )
         XCTAssertEqual(result?.value, "Calculating…")
@@ -261,7 +261,7 @@ final class DisplayLogicTests: XCTestCase {
     }
 
     func testAdapterVisible_unplugged_allNonDischargeModes_false() {
-        let modes: [ChargingMode] = [.charging, .paused, .sailing, .topUp, .calibrating, .heatProtection, .onBattery, .idle]
+        let modes: [ChargingMode] = [.charging, .paused, .sailing, .chargeMax, .calibrating, .heatProtection, .onBattery, .idle]
         for mode in modes {
             XCTAssertFalse(
                 PanelView.adapterVisible(isPluggedIn: false, mode: mode),

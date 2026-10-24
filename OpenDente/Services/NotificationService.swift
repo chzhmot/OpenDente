@@ -28,7 +28,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     enum Event: String, Equatable {
         case chargeLimitReached
-        case topUpComplete
+        case chargeMaxComplete
         case heatProtection
         case dischargeComplete
         case systemChargeLimitConflict
@@ -78,8 +78,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         case .chargeLimitReached:
             content.title = "Charge Limit Reached"
             content.body = "Battery has reached your charge limit. Charging paused."
-        case .topUpComplete:
-            content.title = "Top Up Complete"
+        case .chargeMaxComplete:
+            content.title = "Charge to Maximum Complete"
             content.body = "Battery is fully charged at 100%."
         case .heatProtection:
             content.title = "Heat Protection Active"
@@ -115,7 +115,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private func isEnabled(_ event: Event, settings: AppSettings) -> Bool {
         switch event {
         case .chargeLimitReached: return settings.notifyChargeLimitReached
-        case .topUpComplete:      return settings.notifyTopUpComplete
+        case .chargeMaxComplete:      return settings.notifyChargeMaxComplete
         case .heatProtection:     return settings.notifyHeatProtection
         case .dischargeComplete:  return settings.notifyDischargeComplete
         case .systemChargeLimitConflict: return true  // always notify — important warning

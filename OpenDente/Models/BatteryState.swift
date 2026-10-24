@@ -141,7 +141,7 @@ enum ChargingMode: String, CaseIterable {
     case paused           // Limit reached, using AC power
     case sailing          // In sailing range, not charging
     case discharging      // Actively discharging while plugged in
-    case topUp            // Charging to 100% temporarily
+    case chargeMax            // Charging to 100% temporarily
     case calibrating      // Running calibration cycle
     case heatProtection   // Paused due to high temperature
     case onBattery        // Not plugged in
@@ -153,7 +153,7 @@ enum ChargingMode: String, CaseIterable {
         case .paused:         return "Charge Limit Reached"
         case .sailing:        return "Sailing"
         case .discharging:    return "Discharging"
-        case .topUp:          return "Topping Up"
+        case .chargeMax:          return "Charging to Maximum"
         case .calibrating:    return "Calibrating"
         case .heatProtection: return "Heat Protection"
         case .onBattery:      return "On Battery"
@@ -183,7 +183,7 @@ enum ChargingMode: String, CaseIterable {
             let estimated = max(1, Int(Double(ttf) * Double(toLimit) / Double(remaining)))
             return ("Time to \(chargeLimit)%", BatteryState.formatMinutes(estimated))
 
-        case .topUp:
+        case .chargeMax:
             if percentage >= 100 {
                 return ("Time to Full", "Charged")
             }
@@ -215,7 +215,7 @@ enum ChargingMode: String, CaseIterable {
         case .paused:         return "pause.circle.fill"
         case .sailing:        return "wind"
         case .discharging:    return "arrow.down.circle.fill"
-        case .topUp:          return "arrow.up.to.line.circle.fill"
+        case .chargeMax:          return "arrow.up.to.line.circle.fill"
         case .calibrating:    return "arrow.triangle.2.circlepath"
         case .heatProtection: return "thermometer.sun.fill"
         case .onBattery:      return "battery.100percent"

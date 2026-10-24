@@ -52,7 +52,7 @@ struct PowerFlowView: View {
 
         // Actively charging with measurable battery power.
         // SMC battery power updates before IOKit flips isCharging — use it as early signal.
-        if (battery.isCharging || mode == .charging || mode == .topUp) && bp > 0.1 {
+        if (battery.isCharging || mode == .charging || mode == .chargeMax) && bp > 0.1 {
             return .pluggedInCharging
         }
 

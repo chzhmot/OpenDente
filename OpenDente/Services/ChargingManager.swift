@@ -34,7 +34,7 @@ final class ChargingManager: ObservableObject {
             if mode != oldValue {
                 log.notice("Mode: \(oldValue.displayName, privacy: .public) → \(self.mode.displayName, privacy: .public)")
                 inhibitRetryCount = 0
-                if mode != .charging && mode != .topUp { systemChargeLimitConflict = false }
+                if mode != .charging && mode != .chargeMax { systemChargeLimitConflict = false }
                 updateMagSafeLED()
             }
         }
@@ -316,8 +316,8 @@ final class ChargingManager: ObservableObject {
         // ownership so we restore the adapter once we drop back into range.
         let holdingAdapterCut = chargingAPI == .adapter && adapterCutActive
         guard state.isPluggedIn || mode == .discharging || holdingAdapterCut else {
-            if mode == .topUp {
-                log.info("Top Up ended: unplugged at \(state.percentage, privacy: .public)%")
+            if mode == .chargeMax {
+                log.info("Charge to Maximum ended: unplugged at \(state.percentage, privacy: .public)%")
             }
             // Clean slate — no pending inhibit verification on battery
             firstInhibitTime = nil
@@ -356,8 +356,8 @@ final class ChargingManager: ObservableObject {
             }
         }
 
-        // Top Up mode — stay until unplugged (guard above) or user cancels
-        if mode == .topUp {
+        // Charge to Maximum mode — stay until unplugged (guard above) or user cancels
+        if mode == .chargeMax {
             updateSystemChargeLimitConflict(state)
             return
         }
@@ -588,7 +588,7 @@ final class ChargingManager: ObservableObject {
     /// Called when evaluateState kept the same mode and thus skipped the SMC write.
     private func resyncSMCAfterWake() {
         switch mode {
-        case .charging, .topUp:
+        case .charging, .chargeMax:
             enableCharging()
             log.info("Wake resync: re-enabled charging")
         case .paused, .sailing, .heatProtection:
@@ -640,7 +640,7 @@ final class ChargingManager: ObservableObject {
     /// The system uses a separate firmware gate from CHTE — both must be open.
     /// NotChargingReason bit 24 (0x1000000) = system-level inhibit.
     private func updateSystemChargeLimitConflict(_ state: BatteryState) {
-        let wantsToCharge = mode == .charging || mode == .topUp
+        let wantsToCharge = mode == .charging || mode == .chargeMax
         let batteryReceivingPower = (state.batteryPower ?? 0) > 0.1
 
         if wantsToCharge && !state.isCharging && state.isPluggedIn
@@ -664,23 +664,23 @@ final class ChargingManager: ObservableObject {
         isHelperInstalled && chargingAPI != .unknown
     }
 
-    /// Start Top Up - temporarily charge to 100%
-    func startTopUp() {
+    /// Start Charge to Maximum - temporarily charge to 100%
+    func startChargeMax() {
         guard canControlCharging else {
-            log.warning("Cannot start Top Up: \(self.controlUnavailableReason, privacy: .public)")
+            log.warning("Cannot start Charge to Maximum: \(self.controlUnavailableReason, privacy: .public)")
             return
         }
-        log.notice("Top Up started at \(self.battery.batteryState.percentage, privacy: .public)% (limit was \(self.settings.chargeLimit, privacy: .public)%)")
+        log.notice("Charge to Maximum started at \(self.battery.batteryState.percentage, privacy: .public)% (limit was \(self.settings.chargeLimit, privacy: .public)%)")
 
         enableCharging()
-        mode = .topUp
+        mode = .chargeMax
     }
 
-    /// Cancel Top Up manually — inhibit charging as a safe default,
+    /// Cancel Charge to Maximum manually — inhibit charging as a safe default,
     /// next poll will re-evaluate the correct mode.
-    func cancelTopUp() {
-        guard mode == .topUp else { return }
-        log.notice("Top Up cancelled by user at \(self.battery.batteryState.percentage, privacy: .public)%")
+    func cancelChargeMax() {
+        guard mode == .chargeMax else { return }
+        log.notice("Charge to Maximum cancelled by user at \(self.battery.batteryState.percentage, privacy: .public)%")
 
         inhibitCharging()
         mode = .idle
@@ -803,7 +803,7 @@ final class ChargingManager: ObservableObject {
     private func resyncChargingState() {
         log.info("Resyncing charging state after helper reconnect (mode: \(self.mode.displayName, privacy: .public))")
         switch mode {
-        case .charging, .topUp:
+        case .charging, .chargeMax:
             enableCharging()
         case .paused, .sailing, .heatProtection:
             inhibitCharging()
@@ -836,7 +836,7 @@ final class ChargingManager: ObservableObject {
         }
 
         // LED reflects both mode intent AND IOKit truth:
-        // - charging/topUp/discharging → always orange (we're actively controlling)
+        // - charging/chargeMax/discharging → always orange (we're actively controlling)
         // - system charge limit conflict → green/off (system is blocking, not actually charging)
         // - inhibited modes → orange while IOKit still reports charging (transition),
         //   then green/off once IOKit confirms charging actually stopped.
@@ -847,7 +847,7 @@ final class ChargingManager: ObservableObject {
         } else if systemChargeLimitConflict {
             // System is blocking — LED should reflect "not charging" despite our intent
             color = settings.magSafeLEDOffWhenInactive ? HelperConstants.ledOff : HelperConstants.ledGreen
-        } else if mode == .discharging || mode == .charging || mode == .topUp {
+        } else if mode == .discharging || mode == .charging || mode == .chargeMax {
             color = HelperConstants.ledOrange
         } else if isCharging {
             color = HelperConstants.ledOrange  // IOKit still reports charging (transition)

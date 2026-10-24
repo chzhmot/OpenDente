@@ -27,9 +27,9 @@ final class PowerFlowViewTests: XCTestCase {
         XCTAssertEqual(visual, .pluggedInTrickleCharging)
     }
 
-    func testTopUp_withPower_showsCharging() {
+    func testChargeMax_withPower_showsCharging() {
         let state = makeState(isCharging: true, isPluggedIn: true, batteryPower: 30.0, systemPower: 15.0)
-        let visual = PowerFlowView.resolveVisualState(battery: state, mode: .topUp)
+        let visual = PowerFlowView.resolveVisualState(battery: state, mode: .chargeMax)
         XCTAssertEqual(visual, .pluggedInCharging)
     }
 

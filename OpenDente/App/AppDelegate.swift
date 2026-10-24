@@ -101,8 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] state in
                 guard let self else { return }
                 let pct = state.effectivePercentage(useHardware: self.settings.useHardwareBatteryPercentage)
-                if self.charging.mode == .topUp && pct >= 100 {
-                    NotificationService.shared.send(.topUpComplete, settings: self.settings)
+                if self.charging.mode == .chargeMax && pct >= 100 {
+                    NotificationService.shared.send(.chargeMaxComplete, settings: self.settings)
                 }
             }
             .store(in: &cancellables)

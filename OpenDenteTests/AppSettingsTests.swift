@@ -107,7 +107,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(settings.controlMagSafeLED)
         XCTAssertTrue(settings.showNotifications)
         XCTAssertTrue(settings.notifyChargeLimitReached)
-        XCTAssertTrue(settings.notifyTopUpComplete)
+        XCTAssertTrue(settings.notifyChargeMaxComplete)
         XCTAssertTrue(settings.notifyHeatProtection)
         XCTAssertTrue(settings.notifyDischargeComplete)
     }

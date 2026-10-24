@@ -119,6 +119,17 @@ struct GeneralTab: View {
                         .foregroundStyle(charging.isHelperInstalled ? .green : .orange)
                 }
 
+                if charging.isHelperInstalled {
+                    // The registration can outlive the daemon (app moved, launchd job removed):
+                    // status stays "enabled" but nothing answers. Re-register to recover.
+                    Button("Reinstall Helper") {
+                        HelperInstaller.unregister()
+                        if HelperInstaller.register() {
+                            charging.connectToHelper()
+                        }
+                    }
+                }
+
                 if !charging.isHelperInstalled {
                     helperActions
 
@@ -176,7 +187,7 @@ struct NotificationsTab: View {
 
             Section("Events") {
                 Toggle("Charge Limit Reached", isOn: $settings.notifyChargeLimitReached)
-                Toggle("Top Up Complete (100%)", isOn: $settings.notifyTopUpComplete)
+                Toggle("Charge to Maximum Complete (100%)", isOn: $settings.notifyChargeMaxComplete)
                 Toggle("Heat Protection Active", isOn: $settings.notifyHeatProtection)
                 Toggle("Discharge Complete", isOn: $settings.notifyDischargeComplete)
             }

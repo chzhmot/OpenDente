@@ -41,6 +41,10 @@ struct PanelView: View {
             header
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
+                .padding(.bottom, 4)
+
+            limitSlider
+                .padding(.horizontal, 16)
                 .padding(.bottom, 8)
 
             Divider()
@@ -72,12 +76,6 @@ struct PanelView: View {
             detailsGrid
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-
-            Divider()
-
-            bottomBar
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
         }
         .frame(width: 320)
     }
@@ -106,37 +104,35 @@ struct PanelView: View {
 
             Spacer()
 
-            if charging.mode == .topUp {
-                Button(action: { charging.cancelTopUp() }) {
-                    Image(systemName: "xmark.circle")
-                        .font(.system(size: 14))
+            if charging.mode == .chargeMax {
+                Button(action: { charging.cancelChargeMax() }) {
+                    headerIcon("xmark.circle")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .tint(.red)
-                .help("Cancel Top Up")
+                .help("Cancel Charge to Maximum")
             } else if charging.mode == .discharging {
                 Button(action: { charging.stopDischarge() }) {
-                    Image(systemName: "stop.circle")
-                        .font(.system(size: 14))
+                    headerIcon("stop.circle")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .tint(.red)
                 .help("Stop Discharge")
             } else {
-                Button(action: { charging.startTopUp() }) {
-                    Image(systemName: "arrow.up.to.line.circle")
-                        .font(.system(size: 14))
+                Button(action: { charging.startChargeMax() }) {
+                    headerIcon("bolt.circle")
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!battery.batteryState.isPluggedIn || !charging.isHelperInstalled || charging.chargingAPI == .unknown)
-                .help("Top Up to 100%")
+                .help("Charge to Maximum")
 
                 Button(action: { charging.startDischarge() }) {
-                    Image(systemName: "arrow.down.circle")
-                        .font(.system(size: 14))
+                    headerIcon("arrow.down.circle")
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -145,13 +141,34 @@ struct PanelView: View {
             }
 
             Button(action: { openSettings() }) {
-                Image(systemName: "gear")
-                    .font(.system(size: 14))
+                headerIcon("gear")
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
             .focusEffectDisabled()   // no blue keyboard-focus ring when the panel opens
+            .help("Settings")
+
+            Button(action: { NSApplication.shared.terminate(nil) }) {
+                headerIcon("power")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .focusEffectDisabled()
+            .help("Quit OpenDente")
         }
+    }
+
+    /// Same box and weight for every header button. Resizable symbols are centred geometrically;
+    /// the font-based layout puts each glyph on the text baseline, which sits off-centre in a button.
+    private func headerIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .resizable()
+            .scaledToFit()
+            .fontWeight(.medium)
+            .frame(width: 15, height: 15)
+            .frame(width: 20, height: 16)
     }
 
     // MARK: - Battery Bar
@@ -199,7 +216,7 @@ struct PanelView: View {
     @ViewBuilder
     private var modeIcon: some View {
         switch charging.mode {
-        case .charging, .topUp:
+        case .charging, .chargeMax:
             Image(systemName: "bolt.fill")
         case .discharging:
             Image(systemName: "bolt.fill")
@@ -215,7 +232,7 @@ struct PanelView: View {
 
     private var batteryColor: Color {
         switch charging.mode {
-        case .charging, .topUp:
+        case .charging, .chargeMax:
             return .green
         case .discharging:
             return .orange
@@ -335,34 +352,17 @@ struct PanelView: View {
         }
     }
 
-    // MARK: - Bottom Bar
+    // MARK: - Limit Slider
 
-    private var bottomBar: some View {
-        HStack {
-            HStack(spacing: 6) {
-                Text("\(settings.chargeLimit)%")
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .frame(width: 35)
-
-                Slider(
-                    value: Binding(
-                        get: { Double(settings.chargeLimit) },
-                        set: { settings.chargeLimit = Int(($0 / 5).rounded() * 5) }
-                    ),
-                    in: 20...100
-                )
-                .controlSize(.small)
-            }
-
-            Spacer()
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-        }
+    private var limitSlider: some View {
+        Slider(
+            value: Binding(
+                get: { Double(settings.chargeLimit) },
+                set: { settings.chargeLimit = Int(($0 / 5).rounded() * 5) }
+            ),
+            in: 20...100
+        )
+        .controlSize(.small)
     }
 
     // MARK: - Helper Warning

@@ -207,7 +207,7 @@ final class AppSettings: ObservableObject {
         set { objectWillChange.send(); defaults.set(newValue, forKey: "notifyChargeLimitReached") }
     }
 
-    var notifyTopUpComplete: Bool {
+    var notifyChargeMaxComplete: Bool {
         get { defaults.object(forKey: "notifyTopUpComplete") as? Bool ?? true }
         set { objectWillChange.send(); defaults.set(newValue, forKey: "notifyTopUpComplete") }
     }
