@@ -911,8 +911,21 @@ final class ChargingManagerTests: XCTestCase {
             "Reaching the limit ends the discharge on its own: notify Discharge Complete")
     }
 
-    func testStatusName_saysLimitReachedWithoutManualStop() {
+    func testStatusName_saysLimitReachedAtLimit() {
+        manager.evaluateState(makeBatteryState(percentage: 80))
+        XCTAssertEqual(manager.statusName, "Charge Limit Reached")
+    }
+
+    func testStatusName_saysAboveLimitWhenHoldingAboveIt() {
+        // e.g. app restarted at 85% with an 80% limit: held, not discharging
         manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .paused)
+        XCTAssertEqual(manager.statusName, "Above Limit")
+    }
+
+    func testStatusName_aboveLimitBecomesLimitReachedAtLimit() {
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.evaluateState(makeBatteryState(percentage: 80))
         XCTAssertEqual(manager.statusName, "Charge Limit Reached")
     }
 

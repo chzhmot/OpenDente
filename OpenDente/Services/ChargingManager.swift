@@ -70,10 +70,17 @@ final class ChargingManager: ObservableObject {
     /// until the battery is back at or below the limit, so Stop isn't undone at once.
     @Published private(set) var dischargeStoppedAboveLimit = false
 
-    /// Status shown to the user: the mode, except that a hold the user chose by stopping
-    /// a discharge reads "Paused" rather than "Charge Limit Reached".
+    /// Whether the last evaluated charge sat above the limit.
+    @Published private(set) var isAboveLimit = false
+
+    /// Status shown to the user. A hold reads "Charge Limit Reached" only at the limit:
+    /// "Paused" after the user stopped a discharge, "Above Limit" for any other hold above it
+    /// (e.g. the app started above the limit).
     var statusName: String {
-        mode == .paused && dischargeStoppedAboveLimit ? "Paused" : mode.displayName
+        guard mode == .paused else { return mode.displayName }
+        if dischargeStoppedAboveLimit { return "Paused" }
+        if isAboveLimit { return "Above Limit" }
+        return mode.displayName
     }
 
     /// Last LED color sent to avoid duplicate XPC calls.
@@ -399,6 +406,9 @@ final class ChargingManager: ObservableObject {
         let limit = settings.chargeLimit
         if pct <= limit {
             dischargeStoppedAboveLimit = false
+        }
+        if isAboveLimit != (pct > limit) {
+            isAboveLimit = pct > limit
         }
 
         // Sailing mode = hysteresis to prevent micro-cycling (80→79→charge→80→…).
