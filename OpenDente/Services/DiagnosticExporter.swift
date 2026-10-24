@@ -75,7 +75,7 @@ enum DiagnosticExporter {
         let pct = state.effectivePercentage(useHardware: settings.useHardwareBatteryPercentage)
 
         r += "=== Current State ===\n"
-        r += "Mode: \(charging.mode.displayName)\n"
+        r += "Mode: \(charging.statusName)\n"
         r += "Charge Limit: \(settings.chargeLimit)%\n"
 
         r += "Sailing: \(settings.sailingModeEnabled ? "on" : "off")"

@@ -72,9 +72,11 @@ enum FirmwareChargeLimit {
     static let modeNormal: UInt8 = 0x00
     static let modeLimited: UInt8 = 0x02
 
-    /// Range that holds a battery sitting at `percentage`: upper 2% below it, lower 2% below that.
+    /// Range that holds a battery sitting at `percentage`: upper at it, lower 2% below.
+    /// Never put the upper limit below the current charge: the firmware then drains the
+    /// battery down to it while plugged in, and every re-inhibit moves it lower again.
     static func range(holding percentage: Int) -> (upper: Int, lower: Int) {
-        let upper = max(2, percentage - 2)
+        let upper = max(2, percentage)
         return (upper, upper - 2)
     }
 

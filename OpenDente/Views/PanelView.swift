@@ -96,7 +96,7 @@ struct PanelView: View {
                         .font(.system(size: 10))
                     Text(charging.systemChargeLimitConflict
                          ? "System Limit Active"
-                         : charging.mode.displayName)
+                         : charging.statusName)
                         .font(.system(size: 11))
                 }
                 .foregroundStyle(charging.systemChargeLimitConflict ? .orange : .secondary)

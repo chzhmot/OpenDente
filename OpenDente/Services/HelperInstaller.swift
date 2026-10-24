@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import ServiceManagement
 import os.log
@@ -39,12 +40,54 @@ enum HelperInstaller {
         log.notice("Helper status before register: \(String(describing: currentStatus), privacy: .public)")
         do {
             try service.register()
+            UserDefaults.standard.set(bundledHelperFingerprint, forKey: fingerprintKey)
             log.notice("Helper daemon registered successfully (status now: \(String(describing: service.status), privacy: .public))")
             return service.status == .enabled
         } catch {
             log.error("Failed to register helper daemon: \(error, privacy: .public)")
             return false
         }
+    }
+
+    // MARK: - Helper binary changes
+
+    /// SHA-256 of the helper binary registered last, saved at each successful register().
+    private static let fingerprintKey = "registeredHelperFingerprint"
+
+    /// SHA-256 of the helper binary in this app bundle.
+    static var bundledHelperFingerprint: String? {
+        let url = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/HelperTools/\(HelperConstants.helperBundleID)")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A rebuilt or updated app ships a new helper binary, but launchd keeps its record of the
+    /// old one and then fails to spawn the helper (EX_CONFIG). The status then reads enabled or
+    /// requires approval. Re-registering replaces the record. With no fingerprint stored yet,
+    /// re-register once to be safe.
+    nonisolated static func needsReregistration(status: SMAppService.Status, registered: String?, bundled: String?) -> Bool {
+        (status == .enabled || status == .requiresApproval) && bundled != nil && registered != bundled
+    }
+
+    /// Re-register when the bundled helper differs from the registered one.
+    /// Returns true if it re-registered and the helper is enabled.
+    static func reregisterIfHelperChanged() -> Bool {
+        let registered = UserDefaults.standard.string(forKey: fingerprintKey)
+        guard needsReregistration(status: service.status, registered: registered, bundled: bundledHelperFingerprint) else {
+            return false
+        }
+        log.notice("Bundled helper changed since registration — re-registering")
+        unregister()
+        // register() hands requiresApproval to System Settings instead of registering
+        do {
+            try service.register()
+            UserDefaults.standard.set(bundledHelperFingerprint, forKey: fingerprintKey)
+        } catch {
+            log.error("Failed to re-register helper daemon: \(error, privacy: .public)")
+        }
+        log.notice("Helper status after re-register: \(String(describing: service.status), privacy: .public)")
+        return service.status == .enabled
     }
 
     /// Unregister the helper daemon

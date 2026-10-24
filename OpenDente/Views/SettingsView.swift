@@ -604,7 +604,7 @@ struct BatteryInfoTab: View {
             }
 
             Section("Control") {
-                infoRow("Mode", value: charging.mode.displayName)
+                infoRow("Mode", value: charging.statusName)
                 infoRow("Charging API", value: charging.chargingAPI.displayName)
                 if settings.controlMagSafeLED {
                     infoRow("MagSafe LED", value: ledColorName)

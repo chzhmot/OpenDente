@@ -79,15 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] newMode in
                 guard let self else { return }
-                switch (previousMode, newMode) {
-                case (.charging, .paused), (.sailing, .paused):
-                    NotificationService.shared.send(.chargeLimitReached, settings: self.settings)
-                case (_, .heatProtection):
-                    NotificationService.shared.send(.heatProtection, settings: self.settings)
-                case (.discharging, .paused), (.discharging, .idle):
-                    NotificationService.shared.send(.dischargeComplete, settings: self.settings)
-                default:
-                    break
+                if let event = NotificationService.event(
+                    from: previousMode, to: newMode,
+                    dischargeStoppedByUser: self.charging.dischargeStoppedAboveLimit
+                ) {
+                    NotificationService.shared.send(event, settings: self.settings)
                 }
                 if newMode == .charging || newMode == .onBattery || newMode == .discharging {
                     NotificationService.shared.clearLastEvent()
@@ -217,8 +213,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let status = HelperInstaller.status
         NSLog("[OpenDente] Helper status: \(HelperInstaller.statusDescription) (raw: \(String(describing: status)))")
 
-        switch status {
-        case .notRegistered:
+        if HelperInstaller.reregisterIfHelperChanged() {
+            charging.connectToHelper()
+        }
+
+        switch HelperInstaller.status {
+        // SMAppService also reports .notFound for a daemon that has never been registered,
+        // even when its plist is in the bundle, so try registering in that case too.
+        case .notRegistered, .notFound:
             NSLog("[OpenDente] Attempting to register helper daemon...")
             if HelperInstaller.register() {
                 charging.connectToHelper()
@@ -228,8 +230,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[OpenDente] Helper needs approval in System Settings > Login Items")
         case .enabled:
             NSLog("[OpenDente] Helper is enabled")
-        case .notFound:
-            NSLog("[OpenDente] Helper binary not found in app bundle")
         @unknown default:
             break
         }

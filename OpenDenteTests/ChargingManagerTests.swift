@@ -877,6 +877,67 @@ final class ChargingManagerTests: XCTestCase {
             "After auto-discharge stops below limit, should charge back up")
     }
 
+    func testAutoDischarge_manualStopSticks() {
+        settings.automaticDischarge = true
+
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .discharging)
+        manager.stopDischarge()
+        mock.reset()
+
+        // Still above the limit: the user's stop must hold, not restart the discharge
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .paused)
+        XCTAssertFalse(mock.calls.contains(.forceDischarge(enable: true)),
+            "Auto-discharge must not restart after the user stopped it")
+    }
+
+    func testStatusName_saysPausedAfterManualStopAboveLimit() {
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.startDischarge()
+        manager.stopDischarge()
+        manager.evaluateState(makeBatteryState(percentage: 85))
+
+        XCTAssertEqual(manager.mode, .paused)
+        XCTAssertEqual(manager.statusName, "Paused")
+    }
+
+    func testDischargeReachingLimit_isNotAManualStop() {
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.startDischarge()
+        manager.evaluateState(makeBatteryState(percentage: 80))
+
+        XCTAssertFalse(manager.dischargeStoppedAboveLimit,
+            "Reaching the limit ends the discharge on its own: notify Discharge Complete")
+    }
+
+    func testStatusName_saysLimitReachedWithoutManualStop() {
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.statusName, "Charge Limit Reached")
+    }
+
+    func testStatusName_backToLimitReachedOnceAtLimit() {
+        manager.startDischarge()
+        manager.stopDischarge()
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.evaluateState(makeBatteryState(percentage: 80))
+        XCTAssertEqual(manager.statusName, "Charge Limit Reached")
+    }
+
+    func testAutoDischarge_resumesAfterDroppingToLimit() {
+        settings.automaticDischarge = true
+
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.stopDischarge()
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.evaluateState(makeBatteryState(percentage: 80))
+        mock.reset()
+
+        // Charged above the limit again later: auto-discharge applies again
+        manager.evaluateState(makeBatteryState(percentage: 82))
+        XCTAssertEqual(manager.mode, .discharging)
+    }
+
     func testManualDischarge_stopsAtLimit() {
         settings.automaticDischarge = false
 

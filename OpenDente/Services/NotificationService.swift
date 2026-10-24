@@ -67,6 +67,21 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// The notification a mode change calls for, if any. A discharge the user stopped
+    /// above the limit isn't "complete", and the user knows they stopped it: no notification.
+    static func event(from old: ChargingMode, to new: ChargingMode, dischargeStoppedByUser: Bool) -> Event? {
+        switch (old, new) {
+        case (.charging, .paused), (.sailing, .paused):
+            return .chargeLimitReached
+        case (_, .heatProtection):
+            return .heatProtection
+        case (.discharging, .paused), (.discharging, .idle):
+            return dischargeStoppedByUser ? nil : .dischargeComplete
+        default:
+            return nil
+        }
+    }
+
     func send(_ event: Event, settings: AppSettings) {
         guard settings.showNotifications else { return }
         guard isEnabled(event, settings: settings) else { return }

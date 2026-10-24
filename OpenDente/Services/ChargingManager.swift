@@ -66,6 +66,16 @@ final class ChargingManager: ObservableObject {
     /// the adapter — draining the battery while physically plugged in.
     private var adapterCutActive = false
 
+    /// The user stopped a discharge above the limit. Automatic discharge stays off
+    /// until the battery is back at or below the limit, so Stop isn't undone at once.
+    @Published private(set) var dischargeStoppedAboveLimit = false
+
+    /// Status shown to the user: the mode, except that a hold the user chose by stopping
+    /// a discharge reads "Paused" rather than "Charge Limit Reached".
+    var statusName: String {
+        mode == .paused && dischargeStoppedAboveLimit ? "Paused" : mode.displayName
+    }
+
     /// Last LED color sent to avoid duplicate XPC calls.
     /// Internal setter for testability (simulating helper reconnect).
     var lastLEDColor: UInt8?
@@ -379,7 +389,7 @@ final class ChargingManager: ObservableObject {
             }
             if pct <= settings.chargeLimit {
                 log.info("Discharge reached limit: \(pct, privacy: .public)% ≤ \(self.settings.chargeLimit, privacy: .public)%")
-                stopDischarge()
+                endDischarge()
                 // Fall through to normal evaluation
             } else {
                 return
@@ -387,6 +397,9 @@ final class ChargingManager: ObservableObject {
         }
 
         let limit = settings.chargeLimit
+        if pct <= limit {
+            dischargeStoppedAboveLimit = false
+        }
 
         // Sailing mode = hysteresis to prevent micro-cycling (80→79→charge→80→…).
         // Two asymmetric thresholds:
@@ -443,7 +456,8 @@ final class ChargingManager: ObservableObject {
         }
 
         // Automatic discharge: if battery > limit and auto-discharge is on
-        if settings.automaticDischarge && chargingAPI != .adapter && pct > limit && mode == .paused {
+        if settings.automaticDischarge && chargingAPI != .adapter && pct > limit && mode == .paused
+            && !dischargeStoppedAboveLimit {
             log.notice("Auto-discharge: \(pct, privacy: .public)% > \(limit, privacy: .public)%")
             startDischarge()
         }
@@ -700,13 +714,19 @@ final class ChargingManager: ObservableObject {
             return
         }
         log.notice("Discharge started at \(self.battery.batteryState.percentage, privacy: .public)%")
+        dischargeStoppedAboveLimit = false
         forceDischarge(true)
         mode = .discharging
     }
 
-    /// Stop discharge
+    /// Stop discharge (the user's Stop button)
     func stopDischarge() {
         log.notice("Discharge stopped at \(self.battery.batteryState.percentage, privacy: .public)%")
+        dischargeStoppedAboveLimit = true
+        endDischarge()
+    }
+
+    private func endDischarge() {
         forceDischarge(false)
         mode = .idle
     }

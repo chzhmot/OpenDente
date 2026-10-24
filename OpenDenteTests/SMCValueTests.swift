@@ -213,14 +213,16 @@ final class SMCValueTests: XCTestCase {
 /// The firmware charge range holds the battery by setting a window just below its current charge.
 final class FirmwareChargeLimitTests: XCTestCase {
 
-    func testRangeSitsBelowCurrentPercentage() {
+    // An upper limit below the current charge makes the firmware drain the battery
+    // down to it while plugged in, so the range must top out at the current charge.
+    func testRangeTopsOutAtCurrentPercentage() {
         let range = FirmwareChargeLimit.range(holding: 75)
-        XCTAssertEqual(range.upper, 73)
-        XCTAssertEqual(range.lower, 71)
+        XCTAssertEqual(range.upper, 75)
+        XCTAssertEqual(range.lower, 73)
     }
 
     func testRangeNeverGoesBelowTwoPercentUpper() {
-        let range = FirmwareChargeLimit.range(holding: 3)
+        let range = FirmwareChargeLimit.range(holding: 1)
         XCTAssertEqual(range.upper, 2)
         XCTAssertEqual(range.lower, 0)
         XCTAssertEqual(FirmwareChargeLimit.range(holding: 0).upper, 2)

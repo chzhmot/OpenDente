@@ -81,4 +81,30 @@ final class NotificationServiceTests: XCTestCase {
         service.send(.chargeLimitReached, settings: settings)
         XCTAssertEqual(service.lastEvent, .chargeLimitReached)
     }
+
+    // MARK: - Which event a mode change calls for
+
+    private func event(_ old: ChargingMode, _ new: ChargingMode, stoppedByUser: Bool = false) -> NotificationService.Event? {
+        NotificationService.event(from: old, to: new, dischargeStoppedByUser: stoppedByUser)
+    }
+
+    func testEvent_chargingReachesLimit() {
+        XCTAssertEqual(event(.charging, .paused), .chargeLimitReached)
+        XCTAssertEqual(event(.sailing, .paused), .chargeLimitReached)
+    }
+
+    func testEvent_dischargeReachesLimit() {
+        XCTAssertEqual(event(.discharging, .paused), .dischargeComplete)
+        XCTAssertEqual(event(.discharging, .idle), .dischargeComplete)
+    }
+
+    func testEvent_dischargeStoppedByUser_sendsNothing() {
+        XCTAssertNil(event(.discharging, .idle, stoppedByUser: true))
+        XCTAssertNil(event(.discharging, .paused, stoppedByUser: true))
+        XCTAssertNil(event(.idle, .paused, stoppedByUser: true))
+    }
+
+    func testEvent_heatProtection() {
+        XCTAssertEqual(event(.charging, .heatProtection), .heatProtection)
+    }
 }
