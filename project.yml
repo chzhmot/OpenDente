@@ -16,12 +16,10 @@ settings:
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     # ── Your signing identity ─────────────────────────────────────────────
-    # Replace the placeholder below with your own 10-char Team ID.
-    # Free personal Apple ID is fine. Find it in:
-    #   Xcode ▸ Settings ▸ Accounts ▸ (your Apple ID) ▸ team row,
-    #   or the Team dropdown in any target's Signing & Capabilities tab.
-    # It is referenced as ${DEVELOPMENT_TEAM} by all three targets below,
-    # so you only change it in this one place.
+    # Don't edit this: put your Team ID in .team-id (git-ignored) and run
+    # `make generate`. XcodeGen then fills ${DEVELOPMENT_TEAM} in the three
+    # targets below from the environment; without it they fall back to this
+    # placeholder. See the Makefile for how to find your Team ID.
     DEVELOPMENT_TEAM: YOUR_TEAM_ID
 
 targets:
@@ -105,4 +103,4 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.opendente.tests
         GENERATE_INFOPLIST_FILE: true
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: XM72L9P3TU
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
