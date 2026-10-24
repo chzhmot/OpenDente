@@ -1,0 +1,84 @@
+name: Hardware report
+description: Tell us how OpenDente works on your Mac
+title: "Hardware: <Mac model>, macOS <version>"
+labels: ["hardware-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Starting with the macOS 15.8 / 26.7 updates, Apple changed the firmware of MacBooks and removed some of the SMC keys that other battery apps use to control charging. Which charging mode OpenDente can use therefore depends on your Mac's firmware version, not just on the macOS version, so please include both. See [How it works](../blob/main/docs/HOW-IT-WORKS.md#macos-versions-and-smc-keys).
+
+        Two commands give you most of it:
+        ```
+        sw_vers
+        system_profiler SPHardwareDataType | grep -E "Model Identifier|Chip|System Firmware"
+        ```
+  - type: input
+    id: model
+    attributes:
+      label: Mac model identifier
+      placeholder: MacBookPro18,4
+    validations:
+      required: true
+  - type: input
+    id: chip
+    attributes:
+      label: Chip
+      placeholder: Apple M1 Max
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and build
+      placeholder: 15.8.1 (24H32)
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: System Firmware Version
+      placeholder: mBoot-20457.1.29
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Charging mode (Settings → Battery → Control → Charging API)
+      options:
+        - Tahoe (CHTE/CHIE)
+        - Legacy (CH0B/CH0C)
+        - Firmware range (bfD0/bfE0/bfF0)
+        - Adapter cut (CHIE/CH0J)
+        - Not detected
+    validations:
+      required: true
+  - type: dropdown
+    id: limit
+    attributes:
+      label: Does charging stop at your limit and hold there while plugged in?
+      options:
+        - "Yes"
+        - Stops, but the battery keeps draining while plugged in
+        - "No"
+        - Didn't test
+    validations:
+      required: true
+  - type: dropdown
+    id: discharge
+    attributes:
+      label: Does Force Discharge drain the battery while plugged in?
+      options:
+        - "Yes"
+        - "No"
+        - Button not offered
+        - Didn't test
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnostic report
+      description: Settings → Battery → Export Diagnostic Report…, then attach the file or paste it here.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
