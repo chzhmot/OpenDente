@@ -37,7 +37,7 @@ The classic keys (`CHTE`, `CH0B`, `CH0C`) were removed by firmware that came wit
 |---|---|---|
 | 14 – 15.7, 26 – 26.6 | Nothing: classic keys present | Tahoe or Legacy |
 | 26.4 | Apple adds its own charge limit (System Settings → Battery, 80–100 %). The keys stay. | Tahoe or Legacy; both limits apply, the lower one wins |
-| 15.8, 26.7 | Firmware update removes the classic keys. `bfD0/bfE0/bfF0` are present; reports differ on whether they can be written. | Firmware range if the write probe succeeds, otherwise adapter cut |
+| 15.8, 26.7 | Firmware update removes the classic keys. `bfD0/bfE0/bfF0` are still present. | Firmware range if the write probe succeeds, otherwise adapter cut |
 | 27 beta 4+ (firmware 20457.0.125+) | Both the classic and the `bf*` keys need the private entitlement `com.apple.private.iokit.soc-limit`, which third-party apps can't get. Only the adapter key still works. | Adapter cut |
 
 The key removal is tied to the firmware, not to Apple's charge limit. 15.8 lost the keys but has no charge-limit setting.
@@ -63,7 +63,6 @@ The helper records whether it is holding charging in a root-owned state file (`/
 | The helper crashes | On its next start the helper sees "inhibited" in the state file and resets |
 | The Mac sleeps | The watchdog pauses so sleep doesn't count as a hang. If "Stop Charging when Sleeping" is on, the helper also holds charging itself from the kernel's sleep notification, in case the app is suspended before its own request gets through. |
 
-## Things not yet confirmed on hardware
+## Checking that the helper has quit
 
-- In firmware-range mode: whether the battery really holds while the adapter carries the load.
-- Whether the helper process is gone after quitting the app. To check: `pgrep -fl com.opendente.helper` should print nothing.
+After quitting the app, `pgrep -fl com.opendente.helper` should print nothing.

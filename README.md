@@ -15,7 +15,7 @@ Recent macOS updates changed which SMC keys exist, so OpenDente was adapted to f
 | macOS | Charging keys | OpenDente's mode |
 |---|---|---|
 | 14 – 15.7, 26 – 26.6 | `CH0B`/`CH0C` or `CHTE` | Legacy or Tahoe: gates charging directly |
-| 15.8, 26.7 | Classic keys removed with the firmware update; charge-range keys `bfD0/bfE0/bfF0` present, but reports differ on whether they can be written | Firmware range where writable, otherwise adapter cut |
+| 15.8, 26.7 | Classic keys removed with the firmware update; charge-range keys `bfD0/bfE0/bfF0` still present | Firmware range if they can be written, otherwise adapter cut |
 | 27 (beta 4+) | Both sets locked behind a private Apple entitlement; only the adapter key is left | Adapter cut: the Mac runs on battery while charging is held |
 
 The key removal comes with the firmware in those updates, not with Apple's own charge limit (that arrived in 26.4, and 15.8 doesn't have it). These versions come from reports by other battery tools, not from Apple; details and sources are in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md#macos-versions-and-smc-keys).
