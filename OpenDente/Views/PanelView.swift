@@ -104,29 +104,41 @@ struct PanelView: View {
 
             Spacer()
 
-            if charging.mode == .chargeMax {
-                headerButton("xmark.circle", help: "Cancel Charge to Maximum") { charging.cancelChargeMax() }
-            } else if charging.mode == .discharging {
-                headerButton("stop.circle", help: "Stop Discharge") { charging.stopDischarge() }
-            } else {
-                headerButton("bolt.circle", help: "Charge to Maximum") { charging.startChargeMax() }
-                    .disabled(!battery.batteryState.isPluggedIn || !charging.isHelperInstalled || charging.chargingAPI == .unknown)
+            HStack(spacing: Self.headerButtonGap) {
+                if charging.mode == .chargeMax {
+                    headerButton("xmark.circle", help: "Cancel Charge to Maximum") { charging.cancelChargeMax() }
+                } else if charging.mode == .discharging {
+                    headerButton("stop.circle", help: "Stop Discharge") { charging.stopDischarge() }
+                } else {
+                    headerButton("arrow.up.to.line.circle", help: "Charge to Maximum") { charging.startChargeMax() }
+                        .disabled(!battery.batteryState.isPluggedIn || !charging.isHelperInstalled || charging.chargingAPI == .unknown)
 
-                headerButton("arrow.down.circle", help: "Discharge to Limit") { charging.startDischarge() }
-                    .disabled(!canDischarge)
+                    headerButton("arrow.down.circle", help: "Discharge to Limit") { charging.startDischarge() }
+                        .disabled(!canDischarge)
+                }
+
+                utilityButton("gear", help: "Settings") { openSettings() }
+
+                utilityButton("power.circle", help: "Quit OpenDente") { NSApplication.shared.terminate(nil) }
             }
-
-            headerButton("gearshape.circle", help: "Settings") { openSettings() }
-
-            headerButton("power.circle", help: "Quit OpenDente") { NSApplication.shared.terminate(nil) }
         }
     }
 
-    /// One place for the header button look, so every button (Stop and Cancel included) matches.
+    private static let headerButtonGap: CGFloat = 8
+
+    /// Fixed-size label, so every bezel is the same size and the gaps come out even,
+    /// whatever the glyph measures (`gear` is 18x17 at 14 pt, the circles 16x16).
+    private func headerIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 14))
+            .frame(width: 18, height: 18)
+    }
+
+    /// Bordered charging command. No foreground override, so an available command is bright
+    /// and `.disabled` dims an unavailable one.
     private func headerButton(_ icon: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             headerIcon(icon)
-                .foregroundStyle(.secondary)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
@@ -134,16 +146,17 @@ struct PanelView: View {
         .help(help)
     }
 
-    /// Same box and weight for every header button. Resizable symbols are centred geometrically;
-    /// the font-based layout puts each glyph on the text baseline, which sits off-centre in a button.
-    /// Use `.circle` symbols only: they are square, so each one fills the box exactly.
-    private func headerIcon(_ name: String) -> some View {
-        Image(systemName: name)
-            .resizable()
-            .scaledToFit()
-            .fontWeight(.medium)
-            .frame(width: 15, height: 15)
-            .frame(width: 20, height: 16)
+    /// Bordered grey glyph for app-level actions (Settings, Quit), kept apart from the commands.
+    private func utilityButton(_ icon: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            headerIcon(icon)
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .focusEffectDisabled()
+        .help(help)
     }
 
     // MARK: - Battery Bar
