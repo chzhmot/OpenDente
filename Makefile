@@ -37,8 +37,10 @@ build: check-team generate
 
 # Other copies named OpenDente.app (editor build server, tests) are ad-hoc or unsigned and
 # can't register the helper, so open this one by path rather than through Spotlight.
+# open fails with -600 if the old app is still shutting down, so wait for it to exit first.
 run:
 	-pkill -x OpenDente
+	@while pgrep -x OpenDente >/dev/null; do sleep 0.2; done
 	open "$(DERIVED)/Build/Products/Debug/OpenDente.app"
 
 test: generate
