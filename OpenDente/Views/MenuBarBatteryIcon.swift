@@ -67,14 +67,14 @@ enum MenuBarBatteryIcon {
     /// The whole menu bar item as one image, segments left to right ("97% 3:25 [battery]").
     /// A template image (macOS tints it for light/dark menu bars) unless the battery is
     /// coloured (low battery / Low Power Mode).
-    static func statusImage(_ content: Content, leadInset: CGFloat = 0) -> NSImage {
+    static func statusImage(_ content: Content) -> NSImage {
         let segments = content.segments, glyph = content.glyph, lowPower = content.lowPower
         let pct = max(0, min(100, content.percentage))
         let low = pct <= lowThreshold && glyph == .none
         let coloured = low || lowPower
 
         // Lay the segments out on whole points, so the icon's pixel grid stays intact.
-        var x: CGFloat = leadInset
+        var x: CGFloat = 0
         var placed: [(segment: Segment, x: CGFloat)] = []
         for (i, segment) in segments.enumerated() {
             if i > 0 {

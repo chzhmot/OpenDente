@@ -7,7 +7,6 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
-    private var contentView: MenuBarImageView!
     private var panel: NSPopover!
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
@@ -127,32 +126,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "OpenDente.icon"
         if let button = statusItem.button {
-            // The image lives in a subview, not in the button: the button clips to its length, a
-            // subview can draw into the 8 pt macOS leaves on each side, so the item can be tighter.
-            button.imagePosition = .noImage
-            button.clipsToBounds = false
-            let view = MenuBarImageView()
-            view.imageScaling = .scaleNone
-            view.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]   // stays centred when the length changes
-            button.addSubview(view)
-            contentView = view
+            // Variable length with the image on the button, so macOS applies its standard padding.
+            button.imagePosition = .imageOnly
             button.action = #selector(togglePanel(_:))
             button.target = self
         }
         updateStatusBarText()
-    }
-
-    /// Space between the image and the edge of the grey highlight macOS draws on click: ~2 pt right,
-    /// ~3 pt left (`leadInset` is transparent space inside the image).
-    private let sidePadding: CGFloat = 1
-    private let leadInset: CGFloat = 1
-    /// macOS puts 8 pt around a fixed-length item's length and insets the highlight by ~3.5 pt,
-    /// so the highlight is `length + 12.5` wide. Measured with a test item.
-    private let systemPadding: CGFloat = 4.5
-
-    /// Solid black on a light menu bar, solid white on a dark one. `labelColor` is ~15 % transparent, which reads grey.
-    private static let menuBarInk = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
     }
 
     private func updateStatusBarText() {
@@ -160,16 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let content = MenuBarBatteryIcon.content(state: battery.batteryState, settings: settings)
         if content != lastIconContent {
-            let image = MenuBarBatteryIcon.statusImage(content, leadInset: leadInset)
-            contentView.image = image
-            contentView.contentTintColor = image.isTemplate ? Self.menuBarInk : nil
-            // Fixed length so the padding is ours, not macOS's. The image is centred, so its
-            // transparent leading inset shifts it right.
-            statusItem.length = image.size.width + 2 * (sidePadding - systemPadding)
-            button.layoutSubtreeIfNeeded()
-            contentView.frame = NSRect(x: (button.bounds.width - image.size.width) / 2,
-                                       y: (button.bounds.height - image.size.height) / 2,
-                                       width: image.size.width, height: image.size.height)
+            // A template image is tinted by macOS for the menu bar's appearance, like system items.
+            button.image = MenuBarBatteryIcon.statusImage(content)
             lastIconContent = content
         }
     }
@@ -273,9 +244,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         charging.handleDidWake(battery.batteryState)
     }
 
-}
-
-/// Lets clicks through to the status item's button.
-private final class MenuBarImageView: NSImageView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
