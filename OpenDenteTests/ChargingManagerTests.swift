@@ -145,6 +145,8 @@ final class ChargingManagerTests: XCTestCase {
     private var mock: MockChargingControl!
     private var settings: AppSettings!
     private var sleepMock: MockSleepAssertionControl!
+    /// Injected clock for the inhibit verifier; tests advance it instead of backdating dates.
+    private var currentTime = Date(timeIntervalSinceReferenceDate: 1_000_000)
 
     override func setUp() {
         super.setUp()
@@ -157,7 +159,8 @@ final class ChargingManagerTests: XCTestCase {
             test.mock = MockChargingControl()
             test.sleepMock = MockSleepAssertionControl()
             test.manager = ChargingManager(settings: test.settings, helper: test.mock, battery: .shared,
-                                           sleepAssertion: test.sleepMock)
+                                           sleepAssertion: test.sleepMock,
+                                           now: { test.currentTime })
             test.manager.chargingAPI = .legacy
             test.manager.isHelperInstalled = true
 
@@ -1220,7 +1223,7 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertEqual(firstInhibitCount, 1)
 
         // Simulate 16 seconds passing (past the 15s debounce)
-        manager.lastInhibitTime = Date().addingTimeInterval(-16)
+        currentTime.addTimeInterval(16)
         mock.clearCalls()
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         XCTAssertEqual(manager.mode, .paused)
@@ -1231,7 +1234,7 @@ final class ChargingManagerTests: XCTestCase {
     func testVerification_staleIOKitFlagWithNoBatteryPower_doesNotResend() {
         // IOKit's isCharging lags up to ~2 min; SMC battery power already reads 0 W
         manager.evaluateState(makeBatteryState(percentage: 90))
-        manager.lastInhibitTime = Date().addingTimeInterval(-16)
+        currentTime.addTimeInterval(16)
         mock.clearCalls()
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true, batteryPower: 0.0))
         XCTAssertTrue(mock.calls.filter { $0 == .inhibitCharging }.isEmpty,
@@ -1272,7 +1275,7 @@ final class ChargingManagerTests: XCTestCase {
 
         // Simulate 3 re-send cycles (past debounce each time)
         for i in 1...3 {
-            manager.lastInhibitTime = Date().addingTimeInterval(-16)
+            currentTime.addTimeInterval(16)
             mock.clearCalls()
             manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
             XCTAssertEqual(mock.calls.filter { $0 == .inhibitCharging }.count, 1,
@@ -1280,7 +1283,7 @@ final class ChargingManagerTests: XCTestCase {
         }
 
         // 4th attempt: should NOT re-send (retry limit reached)
-        manager.lastInhibitTime = Date().addingTimeInterval(-16)
+        currentTime.addTimeInterval(16)
         mock.clearCalls()
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         XCTAssertTrue(mock.calls.filter { $0 == .inhibitCharging }.isEmpty,
@@ -1293,18 +1296,18 @@ final class ChargingManagerTests: XCTestCase {
 
         // Use up 2 retries
         for _ in 1...2 {
-            manager.lastInhibitTime = Date().addingTimeInterval(-16)
+            currentTime.addTimeInterval(16)
             manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         }
-        XCTAssertEqual(manager.inhibitRetryCount, 2)
+        XCTAssertEqual(manager.inhibitVerifier.retryCount, 2)
 
         // IOKit catches up (isCharging=false) — needs ≥2s since last inhibit write
-        manager.lastInhibitTime = Date().addingTimeInterval(-3)
+        currentTime.addTimeInterval(3)
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: false))
-        XCTAssertEqual(manager.inhibitRetryCount, 0, "Retry count should reset when IOKit confirms")
+        XCTAssertEqual(manager.inhibitVerifier.retryCount, 0, "Retry count should reset when IOKit confirms")
 
         // New inhibit cycle should have fresh retries
-        manager.lastInhibitTime = Date().addingTimeInterval(-16)
+        currentTime.addTimeInterval(16)
         mock.clearCalls()
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         XCTAssertEqual(mock.calls.filter { $0 == .inhibitCharging }.count, 1,
@@ -1318,7 +1321,7 @@ final class ChargingManagerTests: XCTestCase {
         manager.evaluateState(makeBatteryState(percentage: 75))
         XCTAssertEqual(manager.mode, .sailing)
 
-        manager.lastInhibitTime = Date().addingTimeInterval(-16)
+        currentTime.addTimeInterval(16)
         mock.clearCalls()
         manager.evaluateState(makeBatteryState(percentage: 75, isCharging: true))
         XCTAssertEqual(manager.mode, .sailing)
@@ -1332,21 +1335,21 @@ final class ChargingManagerTests: XCTestCase {
 
         // Exhaust all 3 retries
         for _ in 1...3 {
-            manager.lastInhibitTime = Date().addingTimeInterval(-16)
+            currentTime.addTimeInterval(16)
             manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         }
-        XCTAssertEqual(manager.inhibitRetryCount, 3)
-        XCTAssertFalse(manager.didNotifyInhibitExhausted,
+        XCTAssertEqual(manager.inhibitVerifier.retryCount, 3)
+        XCTAssertFalse(manager.inhibitVerifier.didNotifyExhausted,
             "Not yet — exhaustion fires on the NEXT poll after count reaches 3")
 
         // Next poll triggers the exhaustion branch
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
-        XCTAssertTrue(manager.didNotifyInhibitExhausted,
+        XCTAssertTrue(manager.inhibitVerifier.didNotifyExhausted,
             "Flag should be set after retries exhausted")
 
         // Further polls: flag stays true, no re-trigger
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
-        XCTAssertTrue(manager.didNotifyInhibitExhausted,
+        XCTAssertTrue(manager.inhibitVerifier.didNotifyExhausted,
             "Flag should remain true — no repeated notification")
     }
 
@@ -1355,16 +1358,16 @@ final class ChargingManagerTests: XCTestCase {
 
         // Exhaust retries + trigger exhaustion
         for _ in 1...3 {
-            manager.lastInhibitTime = Date().addingTimeInterval(-16)
+            currentTime.addTimeInterval(16)
             manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         }
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
-        XCTAssertTrue(manager.didNotifyInhibitExhausted)
+        XCTAssertTrue(manager.inhibitVerifier.didNotifyExhausted)
 
         // IOKit finally confirms charging stopped
-        manager.lastInhibitTime = Date().addingTimeInterval(-3)
+        currentTime.addTimeInterval(3)
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: false))
-        XCTAssertFalse(manager.didNotifyInhibitExhausted,
+        XCTAssertFalse(manager.inhibitVerifier.didNotifyExhausted,
             "Flag should reset when IOKit confirms — allows future notification if it happens again")
     }
 
@@ -1373,15 +1376,15 @@ final class ChargingManagerTests: XCTestCase {
 
         // Exhaust retries + trigger exhaustion
         for _ in 1...3 {
-            manager.lastInhibitTime = Date().addingTimeInterval(-16)
+            currentTime.addTimeInterval(16)
             manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
         }
         manager.evaluateState(makeBatteryState(percentage: 90, isCharging: true))
-        XCTAssertTrue(manager.didNotifyInhibitExhausted)
+        XCTAssertTrue(manager.inhibitVerifier.didNotifyExhausted)
 
         // Wake from sleep — stale state should be cleared
         manager.handleDidWake(makeBatteryState(percentage: 90, isCharging: false))
-        XCTAssertFalse(manager.didNotifyInhibitExhausted)
+        XCTAssertFalse(manager.inhibitVerifier.didNotifyExhausted)
     }
 
     // =========================================================================
@@ -1733,14 +1736,19 @@ final class ChargingManagerTests: XCTestCase {
         settings.stopChargingWhenSleeping = true
         manager.evaluateState(makeBatteryState(percentage: 60, isCharging: true))
         // Simulate pending verification
-        manager.lastInhibitTime = Date()
-        manager.inhibitRetryCount = 2
+        manager.inhibitVerifier.didSend(at: currentTime)
+        for _ in 1...2 {
+            currentTime.addTimeInterval(16)
+            XCTAssertEqual(manager.inhibitVerifier.observe(stillCharging: true, now: currentTime), .resend)
+            manager.inhibitVerifier.didSend(at: currentTime)
+        }
+        XCTAssertEqual(manager.inhibitVerifier.retryCount, 2)
         manager.handleWillSleep()
 
         manager.handleDidWake(makeBatteryState(percentage: 60, isCharging: false))
 
-        XCTAssertNil(manager.lastInhibitTime)
-        XCTAssertEqual(manager.inhibitRetryCount, 0)
+        XCTAssertNil(manager.inhibitVerifier.lastSent)
+        XCTAssertEqual(manager.inhibitVerifier.retryCount, 0)
     }
 
     func testDidWake_resetsLEDCache_soLEDIsResent() {
@@ -1782,7 +1790,7 @@ final class ChargingManagerTests: XCTestCase {
         manager.handleWillSleep()
         manager.handleDidWake(makeBatteryState(percentage: 60, isCharging: false))
         XCTAssertNil(manager.modeBeforeSleep)
-        XCTAssertNil(manager.lastInhibitTime)
+        XCTAssertNil(manager.inhibitVerifier.lastSent)
 
         // Cycle 2
         manager.evaluateState(makeBatteryState(percentage: 70, isCharging: true))
@@ -1790,7 +1798,7 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertEqual(manager.modeBeforeSleep, .charging)
         manager.handleDidWake(makeBatteryState(percentage: 70, isCharging: false))
         XCTAssertNil(manager.modeBeforeSleep)
-        XCTAssertEqual(manager.inhibitRetryCount, 0)
+        XCTAssertEqual(manager.inhibitVerifier.retryCount, 0)
     }
 
     // =========================================================================

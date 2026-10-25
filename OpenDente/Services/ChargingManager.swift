@@ -33,7 +33,7 @@ final class ChargingManager: ObservableObject {
         didSet {
             if mode != oldValue {
                 log.notice("Mode: \(oldValue.displayName, privacy: .public) → \(self.mode.displayName, privacy: .public)")
-                inhibitRetryCount = 0
+                inhibitVerifier.resetRetryCount()
                 if mode != .charging && mode != .chargeMax { systemChargeLimitConflict = false }
                 updateMagSafeLED()
             }
@@ -87,24 +87,15 @@ final class ChargingManager: ObservableObject {
     /// Internal setter for testability (simulating helper reconnect).
     var lastLEDColor: UInt8?
 
-    /// Timestamp of last inhibit send — used to debounce verification re-sends.
+    /// Verification state for the current inhibit write (re-send / give-up / confirm timing).
     /// Internal for testability.
-    var lastInhibitTime: Date?
+    var inhibitVerifier = InhibitVerifier()
 
-    /// Timestamp of the very first inhibit in the current cycle — used for total elapsed logging.
-    var firstInhibitTime: Date?
-
-    /// Number of verification re-sends in the current inhibit cycle.
-    /// Reset when IOKit confirms not charging or mode changes.
-    var inhibitRetryCount: Int = 0
+    /// Clock for the inhibit verifier. Injected so tests can advance time.
+    private let now: () -> Date
 
     /// Whether the enable-mismatch diagnostic has been logged for the current charging cycle.
     private var didLogEnableMismatch = false
-
-    /// Whether we already notified the user about inhibit retry exhaustion this cycle.
-    /// Reset when inhibit is confirmed or mode changes.
-    /// Internal for testability.
-    private(set) var didNotifyInhibitExhausted = false
 
     /// True when macOS system Charge Limit is blocking our attempt to charge.
     /// We set CHTE to enable, but the system's separate firmware gate stays closed.
@@ -121,7 +112,9 @@ final class ChargingManager: ObservableObject {
 
     /// Initializer with dependency injection for testability
     init(settings: AppSettings, helper: ChargingControl, battery: BatteryService,
-         sleepAssertion: SleepAssertionControl? = nil) {
+         sleepAssertion: SleepAssertionControl? = nil,
+         now: @escaping () -> Date = Date.init) {
+        self.now = now
         self.settings = settings
         self.helper = helper
         self.battery = battery
@@ -337,9 +330,7 @@ final class ChargingManager: ObservableObject {
                 log.info("Charge to Maximum ended: unplugged at \(state.percentage, privacy: .public)%")
             }
             // Clean slate — no pending inhibit verification on battery
-            firstInhibitTime = nil
-            lastInhibitTime = nil
-            inhibitRetryCount = 0
+            inhibitVerifier.resetForBattery()
             mode = .onBattery
             return
         }
@@ -477,33 +468,26 @@ final class ChargingManager: ObservableObject {
         // the SMC write may not have taken effect — re-send.
         // IOKit can lag 15-30s on Apple Silicon before reflecting the new state,
         // so debounce at 15s and limit to 3 retries to avoid unnecessary SMC writes.
-        let inhibitElapsed = lastInhibitTime.map { Date().timeIntervalSince($0) } ?? .infinity
-        let totalInhibitElapsed = firstInhibitTime.map { Date().timeIntervalSince($0) } ?? .infinity
-        if (mode == .paused || mode == .sailing || mode == .heatProtection)
-            && !state.hasStoppedCharging {
-            if inhibitElapsed >= 15 && inhibitRetryCount < 3 {
-                inhibitRetryCount += 1
-                log.warning("IOKit still reports charging in \(self.mode.displayName, privacy: .public) mode — re-sending inhibit (\(self.inhibitRetryCount, privacy: .public)/3, \(String(format: "%.0f", totalInhibitElapsed), privacy: .public)s since first inhibit) | IOKit: isCharging=\(state.isCharging, privacy: .public), pct=\(pct, privacy: .public)%, adapterPower=\(String(format: "%.1f", state.adapterPower ?? -1), privacy: .public)W, batteryPower=\(String(format: "%.1f", state.batteryPower ?? 0), privacy: .public)W")
+        if mode == .paused || mode == .sailing || mode == .heatProtection {
+            let current = now()
+            let totalInhibitElapsed = inhibitVerifier.elapsedSinceFirst(now: current)
+            let retriesBeforeConfirm = inhibitVerifier.retryCount
+            switch inhibitVerifier.observe(stillCharging: !state.hasStoppedCharging, now: current) {
+            case .resend:
+                log.warning("IOKit still reports charging in \(self.mode.displayName, privacy: .public) mode — re-sending inhibit (\(self.inhibitVerifier.retryCount, privacy: .public)/3, \(String(format: "%.0f", totalInhibitElapsed), privacy: .public)s since first inhibit) | IOKit: isCharging=\(state.isCharging, privacy: .public), pct=\(pct, privacy: .public)%, adapterPower=\(String(format: "%.1f", state.adapterPower ?? -1), privacy: .public)W, batteryPower=\(String(format: "%.1f", state.batteryPower ?? 0), privacy: .public)W")
                 inhibitCharging()
-            } else if inhibitRetryCount >= 3 && !didNotifyInhibitExhausted {
-                didNotifyInhibitExhausted = true
+            case .exhausted:
                 log.error("Inhibit retry exhausted (3/3, \(String(format: "%.0f", totalInhibitElapsed), privacy: .public)s since first inhibit) — SMC writes may be overridden by system | IOKit: isCharging=\(state.isCharging, privacy: .public), pct=\(pct, privacy: .public)%, adapterPower=\(String(format: "%.1f", state.adapterPower ?? -1), privacy: .public)W, batteryPower=\(String(format: "%.1f", state.batteryPower ?? 0), privacy: .public)W")
                 NotificationService.shared.send(.inhibitFailed, settings: settings)
+            case .confirmed:
+                if retriesBeforeConfirm > 0 {
+                    log.notice("IOKit confirmed: charging stopped in \(self.mode.displayName, privacy: .public) mode (after \(retriesBeforeConfirm, privacy: .public) retries, \(String(format: "%.0f", totalInhibitElapsed), privacy: .public)s)")
+                } else {
+                    log.notice("IOKit confirmed: charging stopped in \(self.mode.displayName, privacy: .public) mode")
+                }
+            case .none:
+                break
             }
-        } else if (mode == .paused || mode == .sailing || mode == .heatProtection)
-                    && state.hasStoppedCharging && lastInhibitTime != nil
-                    && inhibitElapsed >= 2 {
-            // Require ≥2s since inhibit write to avoid confirming in the same evaluateState
-            // call that sent the inhibit (e.g. cable plug with stale SMC inhibit).
-            if inhibitRetryCount > 0 {
-                log.notice("IOKit confirmed: charging stopped in \(self.mode.displayName, privacy: .public) mode (after \(self.inhibitRetryCount, privacy: .public) retries, \(String(format: "%.0f", totalInhibitElapsed), privacy: .public)s)")
-            } else {
-                log.notice("IOKit confirmed: charging stopped in \(self.mode.displayName, privacy: .public) mode")
-            }
-            inhibitRetryCount = 0
-            firstInhibitTime = nil
-            lastInhibitTime = nil
-            didNotifyInhibitExhausted = false
         }
 
         // System charge limit conflict detection.
@@ -575,10 +559,7 @@ final class ChargingManager: ObservableObject {
 
         modeBeforeSleep = nil
         // Clear stale verification state from before sleep
-        firstInhibitTime = nil
-        lastInhibitTime = nil
-        inhibitRetryCount = 0
-        didNotifyInhibitExhausted = false
+        inhibitVerifier.resetAll()
         // LED hardware state may differ from lastLEDColor — the helper's sleep
         // callback writes ACLC directly without updating the app's tracking variable.
         // Reset so updateMagSafeLED() re-sends unconditionally after wake.
@@ -772,8 +753,7 @@ final class ChargingManager: ObservableObject {
             return
         }
 
-        lastInhibitTime = Date()
-        if firstInhibitTime == nil { firstInhibitTime = lastInhibitTime }
+        inhibitVerifier.didSend(at: now())
         if chargingAPI == .adapter { adapterCutActive = true }
         helper.inhibitCharging { [weak self] success, error in
             if success {
@@ -797,10 +777,7 @@ final class ChargingManager: ObservableObject {
         }
 
         // End any pending inhibit verification cycle
-        firstInhibitTime = nil
-        lastInhibitTime = nil
-        inhibitRetryCount = 0
-        didNotifyInhibitExhausted = false
+        inhibitVerifier.resetAll()
         adapterCutActive = false
 
         helper.enableCharging { [weak self] success, error in
