@@ -35,7 +35,7 @@ enum HelperConstants {
     static let stateFilePath = "/Library/Application Support/OpenDente/helper-state"
 
     /// Helper version (bump when protocol changes)
-    static let helperVersion = "1.5.0"
+    static let helperVersion = "1.5.1"
 
     /// Minimum helper version that supports MagSafe LED control (ACLC)
     static let minVersionMagSafeLED = "1.1.0"
