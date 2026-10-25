@@ -83,6 +83,9 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: OpenDenteHelper/Info.plist
+        # Embeds Info.plist in the binary, so codesign takes the identifier from it. Without
+        # it, codesign derives one from the file name and drops ".helper" as an extension.
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.opendente.helper
         PRODUCT_NAME: com.opendente.helper
         SKIP_INSTALL: true
