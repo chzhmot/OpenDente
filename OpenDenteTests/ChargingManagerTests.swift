@@ -206,6 +206,8 @@ final class ChargingManagerTests: XCTestCase {
                                            now: { test.currentTime })
             test.manager.chargingAPI = .legacy
             test.manager.isHelperInstalled = true
+            // Discharges started above the limit run down to it; tests start from there.
+            BatteryService.shared.batteryState = makeBatteryState(percentage: 90)
 
             // Explicit preconditions — tests that need sailing/heat/sleep enable it themselves
             test.settings.sailingModeEnabled = false
@@ -510,6 +512,19 @@ final class ChargingManagerTests: XCTestCase {
         XCTAssertNotEqual(manager.mode, .discharging,
             "Discharge must stop when reaching the charge limit")
         XCTAssertTrue(mock.calls.contains(.forceDischarge(enable: false)))
+    }
+
+    func testDischarge_startedAtOrBelowLimit_runsUntilStopped() {
+        BatteryService.shared.batteryState = makeBatteryState(percentage: 60)
+        manager.startDischarge()
+        XCTAssertEqual(manager.mode, .discharging)
+
+        manager.evaluateState(makeBatteryState(percentage: 55))
+        XCTAssertEqual(manager.mode, .discharging,
+            "A discharge started at or below the limit has no limit to stop at")
+
+        manager.stopDischarge()
+        XCTAssertNotEqual(manager.mode, .discharging)
     }
 
     func testDischarge_stopsBelowLimit() {
@@ -891,6 +906,51 @@ final class ChargingManagerTests: XCTestCase {
         manager.evaluateState(makeBatteryState(percentage: 85))
         XCTAssertEqual(manager.mode, .paused)
         XCTAssertFalse(mock.calls.contains(.forceDischarge(enable: true)))
+    }
+
+    func testAutoDischarge_turnedOff_stopsDischarge() {
+        settings.automaticDischarge = true
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .discharging)
+        mock.reset()
+
+        settings.automaticDischarge = false
+        manager.evaluateState(makeBatteryState(percentage: 84))
+        XCTAssertTrue(mock.calls.contains(.forceDischarge(enable: false)))
+        XCTAssertNotEqual(manager.mode, .discharging)
+    }
+
+    func testAutoDischarge_toggledOffThenOn_aboveLimit_discharges() {
+        settings.automaticDischarge = true
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        settings.automaticDischarge = false
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertNotEqual(manager.mode, .discharging)
+
+        settings.automaticDischarge = true
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .discharging)
+    }
+
+    func testAutoDischarge_enabledAfterUserStop_aboveLimit_discharges() {
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        manager.startDischarge()
+        manager.stopDischarge()
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertNotEqual(manager.mode, .discharging)
+
+        settings.automaticDischarge = true
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .discharging,
+            "Turning automatic discharge on is a fresh request, even after a manual Stop")
+    }
+
+    func testManualDischarge_unaffectedByAutomaticDischargeOff() {
+        settings.automaticDischarge = false
+        manager.startDischarge()
+        manager.evaluateState(makeBatteryState(percentage: 85))
+        XCTAssertEqual(manager.mode, .discharging,
+            "A user-started discharge must not be ended by the automatic-discharge setting")
     }
 
     func testAutoDischarge_stopsAtLimit() {

@@ -208,34 +208,32 @@ final class DisplayLogicTests: XCTestCase {
 
     func testCanDischarge_pluggedInAboveLimit_true() {
         XCTAssertTrue(
-            PanelView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: true, isHelperInstalled: true, chargingAPI: .legacy)
         )
     }
 
     func testCanDischarge_notPluggedIn_false() {
         XCTAssertFalse(
-            PanelView.canDischarge(isPluggedIn: false, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: false, isHelperInstalled: true, chargingAPI: .legacy)
         )
     }
 
-    func testCanDischarge_atOrBelowLimit_false() {
-        XCTAssertFalse(
-            PanelView.canDischarge(isPluggedIn: true, percentage: 80, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
-        )
-        XCTAssertFalse(
-            PanelView.canDischarge(isPluggedIn: true, percentage: 75, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .legacy)
+    func testCanDischarge_atOrBelowLimit_true() {
+        XCTAssertTrue(
+            PanelView.canDischarge(isPluggedIn: true, isHelperInstalled: true, chargingAPI: .legacy),
+            "Discharge is available at any battery percentage"
         )
     }
 
     func testCanDischarge_noHelper_false() {
         XCTAssertFalse(
-            PanelView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: false, chargingAPI: .legacy)
+            PanelView.canDischarge(isPluggedIn: true, isHelperInstalled: false, chargingAPI: .legacy)
         )
     }
 
     func testCanDischarge_unknownAPI_false() {
         XCTAssertFalse(
-            PanelView.canDischarge(isPluggedIn: true, percentage: 85, chargeLimit: 80, isHelperInstalled: true, chargingAPI: .unknown),
+            PanelView.canDischarge(isPluggedIn: true, isHelperInstalled: true, chargingAPI: .unknown),
             "Unknown charging API must prevent discharge — no SMC keys to write"
         )
     }

@@ -70,6 +70,15 @@ final class ChargingManager: ObservableObject {
     /// Whether the last evaluated charge sat above the limit.
     @Published private(set) var isAboveLimit = false
 
+    /// Whether the running discharge stops on reaching the charge limit (see `startDischarge`).
+    private var dischargeEndsAtLimit = true
+
+    /// Whether the running discharge was started by the automatic-discharge setting, not the user.
+    private var dischargeIsAutomatic = false
+
+    /// Last seen automatic-discharge setting, to spot the moment it is turned on.
+    private var lastAutomaticDischarge = false
+
     /// Status shown to the user. A hold reads "Charge Limit Reached" only at the limit:
     /// "Paused" after the user stopped a discharge, "Above Limit" for any other hold above it
     /// (e.g. the app started above the limit).
@@ -346,7 +355,11 @@ final class ChargingManager: ObservableObject {
                 mode = .onBattery
                 return
             }
-            if pct <= settings.chargeLimit {
+            if dischargeIsAutomatic && !settings.automaticDischarge {
+                log.info("Discharge ended: automatic discharge turned off")
+                endDischarge()
+                // Fall through to normal evaluation
+            } else if dischargeEndsAtLimit && pct <= settings.chargeLimit {
                 log.info("Discharge reached limit: \(pct, privacy: .public)% ≤ \(self.settings.chargeLimit, privacy: .public)%")
                 endDischarge()
                 // Fall through to normal evaluation
@@ -417,11 +430,18 @@ final class ChargingManager: ObservableObject {
             }
         }
 
+        // Turning automatic discharge on is a fresh request: it overrides an earlier manual Stop.
+        if settings.automaticDischarge && !lastAutomaticDischarge {
+            dischargeStoppedAboveLimit = false
+        }
+        lastAutomaticDischarge = settings.automaticDischarge
+
         // Automatic discharge: if battery > limit and auto-discharge is on
         if settings.automaticDischarge && chargingAPI != .adapter && pct > limit && mode == .paused
             && !dischargeStoppedAboveLimit {
             log.notice("Auto-discharge: \(pct, privacy: .public)% > \(limit, privacy: .public)%")
             startDischarge()
+            dischargeIsAutomatic = mode == .discharging
         }
 
         // Verification: system is the source of truth.
@@ -671,6 +691,10 @@ final class ChargingManager: ObservableObject {
         }
         log.notice("Discharge started at \(self.battery.batteryState.percentage, privacy: .public)%")
         dischargeStoppedAboveLimit = false
+        dischargeIsAutomatic = false
+        // From above the limit, discharge runs down to the limit. At or below it there is
+        // nothing to run down to, so it continues until the user stops it or unplugs.
+        dischargeEndsAtLimit = battery.batteryState.percentage > settings.chargeLimit
         forceDischarge(true)
         mode = .discharging
     }
@@ -683,6 +707,7 @@ final class ChargingManager: ObservableObject {
     }
 
     private func endDischarge() {
+        dischargeIsAutomatic = false
         forceDischarge(false)
         mode = .idle
     }

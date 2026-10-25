@@ -24,16 +24,14 @@ struct PanelView: View {
     private var canDischarge: Bool {
         Self.canDischarge(
             isPluggedIn: battery.batteryState.isPluggedIn,
-            percentage: displayPercentage,
-            chargeLimit: settings.chargeLimit,
             isHelperInstalled: charging.isHelperInstalled,
             chargingAPI: charging.chargingAPI
         )
     }
 
     /// Pure function for testability
-    static func canDischarge(isPluggedIn: Bool, percentage: Int, chargeLimit: Int, isHelperInstalled: Bool, chargingAPI: SMCChargingAPI) -> Bool {
-        isPluggedIn && percentage > chargeLimit && isHelperInstalled && chargingAPI != .unknown
+    static func canDischarge(isPluggedIn: Bool, isHelperInstalled: Bool, chargingAPI: SMCChargingAPI) -> Bool {
+        isPluggedIn && isHelperInstalled && chargingAPI != .unknown
     }
 
     var body: some View {
@@ -53,7 +51,7 @@ struct PanelView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
 
-            if settings.showPowerFlow {
+            if settings.showPowerFlow && PowerFlowView.isVisible(battery: battery.batteryState, mode: charging.mode) {
                 PowerFlowView(battery: battery.batteryState, mode: charging.mode)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
@@ -414,3 +412,9 @@ struct PanelView: View {
         NSApp.activate()
     }
 }
+
+#if DEBUG
+#Preview("Panel") {
+    PanelView()
+}
+#endif

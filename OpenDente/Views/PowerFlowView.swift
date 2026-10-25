@@ -71,6 +71,12 @@ struct PowerFlowView: View {
         return .pluggedInPaused
     }
 
+    /// The flow is only shown while the battery is charging or discharging (or there is no data
+    /// to say). Plugged in with charging held back (paused, sailing, heat protection) shows nothing.
+    static func isVisible(battery: BatteryState, mode: ChargingMode) -> Bool {
+        resolveVisualState(battery: battery, mode: mode) != .pluggedInPaused
+    }
+
     /// Dynamic battery icon reflecting actual charge level
     static func batterySourceIcon(percentage: Int) -> String {
         switch percentage {
@@ -115,7 +121,7 @@ struct PowerFlowView: View {
                     )
                 }
             case .pluggedInPaused:
-                pluggedInAdapterView { EmptyView() }
+                EmptyView()   // not shown, see `isVisible`
             case .pluggedInStopping:
                 pluggedInAdapterView {
                     let bp = battery.batteryPower ?? 0
@@ -329,3 +335,45 @@ struct PowerFlowView: View {
         return CGFloat(batteryPower / adapter).clamped(to: 0.1...1.0)
     }
 }
+
+#if DEBUG
+extension BatteryState {
+    /// Sample reading for previews.
+    static func preview(
+        percentage: Int = 72, isCharging: Bool = true, isPluggedIn: Bool = true,
+        systemPower: Double? = 14, adapterPower: Double? = 60, batteryPower: Double? = 40
+    ) -> BatteryState {
+        BatteryState(
+            percentage: percentage, hardwarePercentage: percentage - 2,
+            isCharging: isCharging, isPluggedIn: isPluggedIn,
+            currentCapacity: 4200, maxCapacity: 5800, designCapacity: 6075, cycleCount: 142,
+            temperature: 31.5, voltage: 12.9, amperage: 2.4,
+            systemPower: systemPower, adapterPower: adapterPower, adapterInfo: nil,
+            batteryPower: batteryPower, notChargingReason: nil, chargerInhibitReason: nil,
+            timeToEmpty: 360, timeToFull: 45
+        )
+    }
+}
+
+#Preview("Charging") {
+    PowerFlowView(battery: .preview(), mode: .charging)
+        .padding()
+        .frame(width: 320)
+}
+
+#Preview("On battery") {
+    PowerFlowView(
+        battery: .preview(isCharging: false, isPluggedIn: false,
+                          systemPower: 9, adapterPower: nil, batteryPower: -9),
+        mode: .onBattery
+    )
+    .padding()
+    .frame(width: 320)
+}
+
+#Preview("Paused") {
+    PowerFlowView(battery: .preview(percentage: 80, isCharging: false, batteryPower: 0), mode: .paused)
+        .padding()
+        .frame(width: 320)
+}
+#endif

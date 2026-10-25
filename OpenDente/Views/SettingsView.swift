@@ -672,3 +672,9 @@ struct BatteryInfoTab: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("Settings") {
+    SettingsView()
+}
+#endif
