@@ -105,69 +105,40 @@ struct PanelView: View {
             Spacer()
 
             if charging.mode == .chargeMax {
-                Button(action: { charging.cancelChargeMax() }) {
-                    headerIcon("xmark.circle")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.red)
-                .help("Cancel Charge to Maximum")
+                headerButton("xmark", help: "Cancel Charge to Maximum") { charging.cancelChargeMax() }
             } else if charging.mode == .discharging {
-                Button(action: { charging.stopDischarge() }) {
-                    headerIcon("stop.circle")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.red)
-                .help("Stop Discharge")
+                headerButton("stop", help: "Stop Discharge") { charging.stopDischarge() }
             } else {
-                Button(action: { charging.startChargeMax() }) {
-                    headerIcon("bolt.circle")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!battery.batteryState.isPluggedIn || !charging.isHelperInstalled || charging.chargingAPI == .unknown)
-                .help("Charge to Maximum")
+                headerButton("bolt", help: "Charge to Maximum") { charging.startChargeMax() }
+                    .disabled(!battery.batteryState.isPluggedIn || !charging.isHelperInstalled || charging.chargingAPI == .unknown)
 
-                Button(action: { charging.startDischarge() }) {
-                    headerIcon("arrow.down.circle")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!canDischarge)
-                .help("Discharge to Limit")
+                headerButton("arrow.down", help: "Discharge to Limit") { charging.startDischarge() }
+                    .disabled(!canDischarge)
             }
 
-            Button(action: { openSettings() }) {
-                headerIcon("gear")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .focusEffectDisabled()   // no blue keyboard-focus ring when the panel opens
-            .help("Settings")
+            headerButton("gearshape", help: "Settings") { openSettings() }
 
-            Button(action: { NSApplication.shared.terminate(nil) }) {
-                headerIcon("power")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .focusEffectDisabled()
-            .help("Quit OpenDente")
+            headerButton("power", help: "Quit OpenDente") { NSApplication.shared.terminate(nil) }
         }
     }
 
-    /// Same box and weight for every header button. Resizable symbols are centred geometrically;
-    /// the font-based layout puts each glyph on the text baseline, which sits off-centre in a button.
+    /// One place for the header button look, so every button (Stop and Cancel included) matches.
+    private func headerButton(_ icon: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            headerIcon(icon)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .focusEffectDisabled()   // no blue keyboard-focus ring when the panel opens
+        .help(help)
+    }
+
+    /// Same box and weight for every header button. Sized by font rather than resizable, so
+    /// plain SF Symbols share one optical size instead of each glyph being stretched to fill.
     private func headerIcon(_ name: String) -> some View {
         Image(systemName: name)
-            .resizable()
-            .scaledToFit()
-            .fontWeight(.medium)
-            .frame(width: 15, height: 15)
+            .font(.system(size: 12, weight: .medium))
             .frame(width: 20, height: 16)
     }
 
