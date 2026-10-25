@@ -4,6 +4,7 @@
 #   make generate   regenerate OpenDente.xcodeproj from project.yml, with your Team ID
 #   make build      signed Debug build (needs .team-id)
 #   make run        quit OpenDente and open the signed build (the helper only registers from it)
+#   make release    signed Release build, packaged as build/OpenDente-<version>.dmg
 #   make test       unit tests, no signing needed
 #   make clean      remove build output
 #
@@ -22,7 +23,11 @@ DERIVED     := build/DerivedData
 # .noindex keeps Spotlight from offering this unsigned OpenDente.app.
 TEST_DERIVED := build/TestDerivedData.noindex
 
-.PHONY: generate build run test clean check-team team-id
+RELEASE_DERIVED := build/ReleaseDerivedData
+VERSION := $(shell awk '/MARKETING_VERSION:/ { gsub(/"/, "", $$2); print $$2 }' project.yml)
+DMG := build/OpenDente-$(VERSION).dmg
+
+.PHONY: generate build run release test clean check-team team-id
 
 # XcodeGen fills ${DEVELOPMENT_TEAM} in project.yml from the environment, so the generated
 # project carries the real Team ID and SweetPad / plain xcodebuild sign with it.
@@ -43,13 +48,27 @@ run:
 	@while pgrep -x OpenDente >/dev/null; do sleep 0.2; done
 	open "$(DERIVED)/Build/Products/Debug/OpenDente.app"
 
+# Signed with the Apple Development certificate, not Developer ID, so it isn't notarized:
+# other Macs need right-click > Open the first time.
+release: check-team generate
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
+		-destination '$(DESTINATION)' -derivedDataPath $(RELEASE_DERIVED) \
+		-allowProvisioningUpdates build
+	rm -rf build/dmg $(DMG)
+	mkdir -p build/dmg
+	cp -R "$(RELEASE_DERIVED)/Build/Products/Release/OpenDente.app" build/dmg/
+	ln -s /Applications build/dmg/Applications
+	hdiutil create -volname "OpenDente $(VERSION)" -srcfolder build/dmg -format UDZO -ov $(DMG)
+	rm -rf build/dmg
+	@echo "Packaged: $(DMG)"
+
 test: generate
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 		-destination '$(DESTINATION)' -derivedDataPath $(TEST_DERIVED) \
 		CODE_SIGNING_ALLOWED=NO test
 
 clean:
-	rm -rf $(DERIVED) $(TEST_DERIVED)
+	rm -rf $(DERIVED) $(TEST_DERIVED) $(RELEASE_DERIVED) build/dmg build/OpenDente-*.dmg
 
 check-team:
 	@test -n "$(TEAM_ID)" || { \
