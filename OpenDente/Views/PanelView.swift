@@ -105,20 +105,20 @@ struct PanelView: View {
             Spacer()
 
             if charging.mode == .chargeMax {
-                headerButton("xmark", help: "Cancel Charge to Maximum") { charging.cancelChargeMax() }
+                headerButton("xmark.circle", help: "Cancel Charge to Maximum") { charging.cancelChargeMax() }
             } else if charging.mode == .discharging {
-                headerButton("stop", help: "Stop Discharge") { charging.stopDischarge() }
+                headerButton("stop.circle", help: "Stop Discharge") { charging.stopDischarge() }
             } else {
-                headerButton("bolt", help: "Charge to Maximum") { charging.startChargeMax() }
+                headerButton("bolt.circle", help: "Charge to Maximum") { charging.startChargeMax() }
                     .disabled(!battery.batteryState.isPluggedIn || !charging.isHelperInstalled || charging.chargingAPI == .unknown)
 
-                headerButton("arrow.down", help: "Discharge to Limit") { charging.startDischarge() }
+                headerButton("arrow.down.circle", help: "Discharge to Limit") { charging.startDischarge() }
                     .disabled(!canDischarge)
             }
 
-            headerButton("gearshape", help: "Settings") { openSettings() }
+            headerButton("gearshape.circle", help: "Settings") { openSettings() }
 
-            headerButton("power", help: "Quit OpenDente") { NSApplication.shared.terminate(nil) }
+            headerButton("power.circle", help: "Quit OpenDente") { NSApplication.shared.terminate(nil) }
         }
     }
 
@@ -134,11 +134,15 @@ struct PanelView: View {
         .help(help)
     }
 
-    /// Same box and weight for every header button. Sized by font rather than resizable, so
-    /// plain SF Symbols share one optical size instead of each glyph being stretched to fill.
+    /// Same box and weight for every header button. Resizable symbols are centred geometrically;
+    /// the font-based layout puts each glyph on the text baseline, which sits off-centre in a button.
+    /// Use `.circle` symbols only: they are square, so each one fills the box exactly.
     private func headerIcon(_ name: String) -> some View {
         Image(systemName: name)
-            .font(.system(size: 12, weight: .medium))
+            .resizable()
+            .scaledToFit()
+            .fontWeight(.medium)
+            .frame(width: 15, height: 15)
             .frame(width: 20, height: 16)
     }
 
