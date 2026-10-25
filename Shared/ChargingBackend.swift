@@ -1,7 +1,8 @@
 import Foundation
 import os.log
 
-private let log = Logger(subsystem: HelperConstants.machServiceName, category: "ChargingBackend")
+// The helper's bundle ID in the helper, the test host's under tests, so test runs stay out of the helper's log.
+private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? HelperConstants.machServiceName, category: "ChargingBackend")
 
 // MARK: - Errors
 
