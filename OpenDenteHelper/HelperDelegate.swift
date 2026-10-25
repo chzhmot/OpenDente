@@ -13,12 +13,8 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
     private let watchdog: Watchdog
     private let lock = NSLock()
 
-    /// Detected charging API for this Mac
-    private var chargingAPI: SMCChargingAPI = .unknown
-    // Adapter-cut fallback: the adapter key to toggle and the byte that
-    // disconnects the adapter (CHIE=0x08, CH0J=0x20). 0x00 reconnects.
-    private var adapterKey = "CHIE"
-    private var adapterCutByte: UInt8 = 0x08
+    /// Charging backend for this Mac, nil when no charging control keys exist
+    private var backend: ChargingBackend?
 
     /// Whether this Mac has a MagSafe LED controllable via ACLC
     private var hasMagSafeLED = false
@@ -40,7 +36,8 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         self.watchdog = watchdog
         super.init()
         openSMC()
-        detectChargingAPI()
+        backend = detectChargingBackend(smc: smc, batteryPercentage: Self.currentBatteryPercentage)
+        probeSMCKeys()
     }
 
     // MARK: - SMC Setup
@@ -54,33 +51,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         }
     }
 
-    private func detectChargingAPI() {
-        // Adapter key for adapter-cut charging and for force discharge on the other APIs.
-        if smc.keyExists("CHIE") {
-            adapterKey = "CHIE"
-            adapterCutByte = 0x08
-        } else if smc.keyExists("CH0J") {
-            adapterKey = "CH0J"
-            adapterCutByte = 0x20
-        }
-
-        if smc.keyExists("CHTE") {
-            chargingAPI = .tahoe
-            log.info("Detected Tahoe charging API (CHTE/CHIE)")
-        } else if smc.keyExists("CH0B") {
-            chargingAPI = .legacy
-            log.info("Detected legacy charging API (CH0B/CH0C)")
-        } else if SMCService.hasFirmwareChargeRange(smc) && firmwareRangeIsWritable() {
-            chargingAPI = .firmware
-            log.info("Detected firmware charge-range API (bfD0/bfE0/bfF0)")
-        } else if smc.keyExists("CHIE") || smc.keyExists("CH0J") {
-            chargingAPI = .adapter
-            log.info("Detected adapter-cut charging API (\(self.adapterKey, privacy: .public))")
-        } else {
-            chargingAPI = .unknown
-            log.info("No charging control keys detected")
-        }
-
+    private func probeSMCKeys() {
         // Check for MagSafe LED control (not all Macs have MagSafe)
         hasMagSafeLED = smc.keyExists("ACLC")
         log.info("MagSafe LED (ACLC): \(self.hasMagSafeLED ? "available" : "not found", privacy: .public)")
@@ -101,35 +72,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         }
     }
 
-    /// Some firmware lets the app read bfD0/bfE0/bfF0 but rejects writes (kIOReturnNotPrivileged).
-    /// Re-write the current "normal" mode value, which changes nothing, to find out which case this is.
-    /// If bfF0 isn't in normal mode (left over from an earlier run), it is already writable.
-    private func firmwareRangeIsWritable() -> Bool {
-        guard smc.readKeyOptional(FirmwareChargeLimit.modeKey)?.uint8Value == FirmwareChargeLimit.modeNormal else {
-            return true
-        }
-        do {
-            try smc.writeKey(FirmwareChargeLimit.modeKey, bytes: [FirmwareChargeLimit.modeNormal])
-            return true
-        } catch {
-            log.warning("Firmware charge-range keys present but not writable: \(error.localizedDescription, privacy: .public)")
-            return false
-        }
-    }
-
-    private enum FirmwareLimitError: LocalizedError {
-        case percentageUnavailable
-        case readbackMismatch(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .percentageUnavailable: return "Battery percentage unavailable"
-            case .readbackMismatch(let key): return "\(key) readback did not match the written value"
-            }
-        }
-    }
-
-    private func currentBatteryPercentage() -> Int? {
+    private static func currentBatteryPercentage() -> Int? {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
         for source in sources {
@@ -140,98 +83,11 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         return nil
     }
 
-    private func writeVerified(_ key: String, bytes: [UInt8]) throws {
-        try smc.writeKey(key, bytes: bytes)
-        guard let value = smc.readKeyOptional(key), Array(value.bytes.prefix(bytes.count)) == bytes else {
-            throw FirmwareLimitError.readbackMismatch(key)
-        }
-    }
-
-    /// Hold the battery where it is: a range just below the current charge, then limited mode.
-    /// The adapter keeps powering the Mac. Caller must hold lock. Restores normal mode on failure.
-    private func inhibitFirmwareLocked() throws {
-        guard let pct = currentBatteryPercentage() else { throw FirmwareLimitError.percentageUnavailable }
-        let range = FirmwareChargeLimit.range(holding: pct)
-        log.info("Writing firmware charge range: upper=\(range.upper, privacy: .public) lower=\(range.lower, privacy: .public) (battery \(pct, privacy: .public)%)")
-        do {
-            try writeVerified(FirmwareChargeLimit.modeKey, bytes: [FirmwareChargeLimit.modeNormal])
-            try writeVerified(FirmwareChargeLimit.upperKey, bytes: FirmwareChargeLimit.bytes(for: range.upper))
-            try writeVerified(FirmwareChargeLimit.lowerKey, bytes: FirmwareChargeLimit.bytes(for: range.lower))
-            try writeVerified(FirmwareChargeLimit.modeKey, bytes: [FirmwareChargeLimit.modeLimited])
-        } catch {
-            try? smc.writeKey(FirmwareChargeLimit.modeKey, bytes: [FirmwareChargeLimit.modeNormal])
-            throw error
-        }
-    }
-
-    // MARK: - Verification
+    // MARK: - Logging helpers
 
     /// Format bytes array as hex string for logging (e.g. "01 00 00 00")
     private func hexString(_ bytes: [UInt8]) -> String {
         bytes.map { String(format: "%02X", $0) }.joined(separator: " ")
-    }
-
-    /// Read back the charging key after a write to confirm it took effect.
-    /// `expected` = true means we expect charging to be inhibited.
-    private func verifyChargingKey(expected inhibited: Bool) {
-        switch chargingAPI {
-        case .legacy:
-            if let val = smc.readKeyOptional("CH0B") {
-                let allHex = hexString(val.bytes)
-                let byte = val.uint8Value ?? 0
-                let ok = inhibited ? (byte == 0x02) : (byte == 0x00)
-                if ok {
-                    log.info("CH0B readback OK: [\(allHex, privacy: .public)]")
-                } else {
-                    let expected = inhibited ? "02" : "00"
-                    log.error("CH0B readback MISMATCH: [\(allHex, privacy: .public)], expected [\(expected, privacy: .public)]")
-                }
-            } else {
-                log.warning("CH0B readback failed: key not readable")
-            }
-        case .tahoe:
-            if let val = smc.readKeyOptional("CHTE") {
-                let allHex = hexString(val.bytes)
-                let byte0 = val.uint8Value ?? 0xFF
-                let ok = inhibited ? (byte0 == 0x01) : (byte0 == 0x00)
-                if ok {
-                    log.info("CHTE readback OK: [\(allHex, privacy: .public)]")
-                } else {
-                    let expected = inhibited ? "01 00 00 00" : "00 00 00 00"
-                    log.error("CHTE readback MISMATCH: [\(allHex, privacy: .public)], expected [\(expected, privacy: .public)]")
-                }
-            } else {
-                log.warning("CHTE readback failed: key not readable")
-            }
-        case .firmware:
-            if let val = smc.readKeyOptional(FirmwareChargeLimit.modeKey) {
-                let allHex = hexString(val.bytes)
-                let expected = inhibited ? FirmwareChargeLimit.modeLimited : FirmwareChargeLimit.modeNormal
-                if val.uint8Value == expected {
-                    log.info("bfF0 readback OK: [\(allHex, privacy: .public)]")
-                } else {
-                    log.error("bfF0 readback MISMATCH: [\(allHex, privacy: .public)], expected [\(self.hexString([expected]), privacy: .public)]")
-                }
-            } else {
-                log.warning("bfF0 readback failed: key not readable")
-            }
-        case .adapter:
-            if let val = smc.readKeyOptional(adapterKey) {
-                let allHex = hexString(val.bytes)
-                let byte = val.uint8Value ?? 0xFF
-                let ok = inhibited ? (byte == adapterCutByte) : (byte == 0x00)
-                if ok {
-                    log.info("\(self.adapterKey, privacy: .public) readback OK: [\(allHex, privacy: .public)]")
-                } else {
-                    let expected = inhibited ? hexString([adapterCutByte]) : "00"
-                    log.error("\(self.adapterKey, privacy: .public) readback MISMATCH: [\(allHex, privacy: .public)], expected [\(expected, privacy: .public)]")
-                }
-            } else {
-                log.warning("\(self.adapterKey, privacy: .public) readback failed: key not readable")
-            }
-        case .unknown:
-            break
-        }
     }
 
     // MARK: - NSXPCListenerDelegate
@@ -370,30 +226,13 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         lock.lock()
         defer { lock.unlock() }
 
-        guard chargingAPI != .unknown else {
+        guard let backend else {
             reply(false, "No charging API detected")
             return
         }
 
         do {
-            switch chargingAPI {
-            case .legacy:
-                log.info("Writing CH0B: [00], CH0C: [00]")
-                try smc.writeKey("CH0B", bytes: [0x00])
-                try smc.writeKey("CH0C", bytes: [0x00])
-            case .tahoe:
-                log.info("Writing CHTE: [00 00 00 00]")
-                try smc.writeKey("CHTE", bytes: [0x00, 0x00, 0x00, 0x00])
-            case .firmware:
-                log.info("Writing bfF0: [00] (normal charging)")
-                try smc.writeKey(FirmwareChargeLimit.modeKey, bytes: [FirmwareChargeLimit.modeNormal])
-            case .adapter:
-                log.info("Writing \(self.adapterKey, privacy: .public): [00] (reconnect adapter)")
-                try smc.writeKey(adapterKey, bytes: [0x00])
-            case .unknown:
-                break
-            }
-            verifyChargingKey(expected: false)
+            try backend.enable()
             HelperState.write(.normal)
             log.info("Charging enabled")
             reply(true, nil)
@@ -407,30 +246,13 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         lock.lock()
         defer { lock.unlock() }
 
-        guard chargingAPI != .unknown else {
+        guard let backend else {
             reply(false, "No charging API detected")
             return
         }
 
         do {
-            switch chargingAPI {
-            case .legacy:
-                log.info("Writing CH0B: [02], CH0C: [02]")
-                try smc.writeKey("CH0B", bytes: [0x02])
-                try smc.writeKey("CH0C", bytes: [0x02])
-            case .tahoe:
-                log.info("Writing CHTE: [01 00 00 00]")
-                try smc.writeKey("CHTE", bytes: [0x01, 0x00, 0x00, 0x00])
-            case .firmware:
-                try inhibitFirmwareLocked()
-            case .adapter:
-                log.info("Writing \(self.adapterKey, privacy: .public): [\(self.hexString([self.adapterCutByte]), privacy: .public)] (disconnect adapter)")
-                try smc.writeKey(adapterKey, bytes: [adapterCutByte])
-            case .unknown:
-                break
-            }
-            // Read-back verification: confirm the write took effect
-            verifyChargingKey(expected: true)
+            try backend.inhibit()
             HelperState.write(.inhibited)
             log.info("Charging inhibited")
             reply(true, nil)
@@ -444,51 +266,17 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         lock.lock()
         defer { lock.unlock() }
 
-        guard chargingAPI != .unknown else {
+        guard let backend else {
             reply(false, "No charging API detected")
             return
         }
 
         do {
-            switch chargingAPI {
-            case .legacy:
-                let byte: UInt8 = enable ? 0x01 : 0x00
-                log.info("Writing CH0I: [\(self.hexString([byte]), privacy: .public)]")
-                try smc.writeKey("CH0I", bytes: [byte])
-            case .tahoe:
-                let byte: UInt8 = enable ? 0x08 : 0x00
-                log.info("Writing CHIE: [\(self.hexString([byte]), privacy: .public)]")
-                try smc.writeKey("CHIE", bytes: [byte])
-            case .firmware, .adapter:
-                guard smc.keyExists(adapterKey) else {
-                    reply(false, "No adapter key for force discharge")
-                    return
-                }
-                let byte: UInt8 = enable ? self.adapterCutByte : 0x00
-                log.info("Writing \(self.adapterKey, privacy: .public): [\(self.hexString([byte]), privacy: .public)] (adapter discharge)")
-                try smc.writeKey(adapterKey, bytes: [byte])
-            case .unknown:
-                break
-            }
+            try backend.setDischarge(enable)
             if enable {
-                // Enabling discharge — also inhibit charging
-                switch chargingAPI {
-                case .legacy:
-                    log.info("Writing CH0B: [02], CH0C: [02] (discharge + inhibit)")
-                    try smc.writeKey("CH0B", bytes: [0x02])
-                    try smc.writeKey("CH0C", bytes: [0x02])
-                case .tahoe:
-                    log.info("Writing CHTE: [01 00 00 00] (discharge + inhibit)")
-                    try smc.writeKey("CHTE", bytes: [0x01, 0x00, 0x00, 0x00])
-                case .firmware, .adapter:
-                    // Adapter already disconnected above; nothing further to inhibit.
-                    break
-                case .unknown:
-                    break
-                }
                 HelperState.write(.inhibited)
             }
-            // Disabling discharge: only the discharge key is toggled (above).
+            // Disabling discharge: only the discharge key is toggled.
             // Charging keys are left as-is — ChargingManager's evaluateState
             // sends enableCharging() or inhibitCharging() immediately after,
             // avoiding a wasted enable→inhibit round-trip at the charge limit.
@@ -523,7 +311,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
     }
 
     func getChargingAPI(reply: @escaping (String) -> Void) {
-        reply(chargingAPI.rawValue)
+        reply((backend?.api ?? .unknown).rawValue)
     }
 
     func syncSleepSettings(stopChargingWhenSleeping: Bool, sleepLEDColor: UInt8, reply: @escaping (Bool) -> Void) {
@@ -564,13 +352,13 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
     func inhibitChargingOnSleep() {
         lock.lock()
         let sleepSetting = stopChargingWhenSleeping
-        let api = chargingAPI
+        let backend = backend
         let ledColor = sleepLEDColor
         let hasLED = hasMagSafeLED
         lock.unlock()
 
-        guard sleepSetting && api != .unknown else {
-            log.info("Sleep callback: skipped (stopChargingWhenSleeping=\(sleepSetting, privacy: .public), api=\(String(describing: api), privacy: .public))")
+        guard sleepSetting, let backend else {
+            log.info("Sleep callback: skipped (stopChargingWhenSleeping=\(sleepSetting, privacy: .public), api=\(String(describing: backend?.api ?? .unknown), privacy: .public))")
             return
         }
 
@@ -578,19 +366,7 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
         defer { lock.unlock() }
 
         do {
-            switch chargingAPI {
-            case .legacy:
-                try smc.writeKey("CH0B", bytes: [0x02])
-                try smc.writeKey("CH0C", bytes: [0x02])
-            case .tahoe:
-                try smc.writeKey("CHTE", bytes: [0x01, 0x00, 0x00, 0x00])
-            case .firmware:
-                try inhibitFirmwareLocked()
-            case .adapter:
-                try smc.writeKey(adapterKey, bytes: [adapterCutByte])
-            case .unknown:
-                break
-            }
+            try backend.inhibit()
             // Update LED to reflect inhibited state (visible with lid closed).
             // 0xFF = don't touch LED (controlMagSafeLED is off).
             if hasLED && ledColor != 0xFF {
@@ -617,37 +393,10 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate, HelperProtocol {
 
     /// Reset charging — caller must already hold lock
     private func resetChargingDirectLocked() {
-        guard chargingAPI != .unknown else { return }
+        guard let backend else { return }
 
         do {
-            // Stop discharge
-            switch chargingAPI {
-            case .legacy:
-                try smc.writeKey("CH0I", bytes: [0x00])
-            case .tahoe:
-                try smc.writeKey("CHIE", bytes: [0x00])
-            case .firmware:
-                if smc.keyExists(adapterKey) { try? smc.writeKey(adapterKey, bytes: [0x00]) }
-            case .adapter:
-                try smc.writeKey(adapterKey, bytes: [0x00])
-            case .unknown:
-                break
-            }
-
-            // Enable charging
-            switch chargingAPI {
-            case .legacy:
-                try smc.writeKey("CH0B", bytes: [0x00])
-                try smc.writeKey("CH0C", bytes: [0x00])
-            case .tahoe:
-                try smc.writeKey("CHTE", bytes: [0x00, 0x00, 0x00, 0x00])
-            case .firmware:
-                try smc.writeKey(FirmwareChargeLimit.modeKey, bytes: [FirmwareChargeLimit.modeNormal])
-            case .adapter:
-                try smc.writeKey(adapterKey, bytes: [0x00])
-            case .unknown:
-                break
-            }
+            try backend.reset()
 
             // Reset MagSafe LED to system default if available
             if hasMagSafeLED {
