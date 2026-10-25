@@ -230,7 +230,7 @@ final class ChargingManager: ObservableObject {
         }
         // 0xFF = sentinel for "don't touch LED" (when controlMagSafeLED is off)
         let ledColor: UInt8 = settings.controlMagSafeLED
-            ? (settings.magSafeLEDOffWhenInactive ? HelperConstants.ledOff : HelperConstants.ledGreen)
+            ? inactiveLEDColor
             : 0xFF
         HelperClient.shared.syncSleepSettings(
             stopChargingWhenSleeping: settings.stopChargingWhenSleeping,
@@ -560,10 +560,7 @@ final class ChargingManager: ObservableObject {
         // Without this, LED stays orange (frozen) during sleep even though
         // charging was stopped. MagSafe LED is visible with the lid closed.
         if settings.controlMagSafeLED {
-            let color = settings.magSafeLEDOffWhenInactive
-                ? HelperConstants.ledOff
-                : HelperConstants.ledGreen
-            sendLEDColor(color)
+            sendLEDColor(inactiveLEDColor)
         }
 
         log.notice("Will sleep: inhibited charging (stopChargingWhenSleeping)")
@@ -611,19 +608,26 @@ final class ChargingManager: ObservableObject {
     /// Re-send the SMC command for the current mode after wake.
     /// Called when evaluateState kept the same mode and thus skipped the SMC write.
     private func resyncSMCAfterWake() {
+        if resendCommandForCurrentMode() {
+            log.info("Wake resync: re-sent command for \(self.mode.displayName, privacy: .public)")
+        }
+    }
+
+    /// Re-send the SMC command that the current mode calls for.
+    /// Returns false for modes that have no command to send.
+    @discardableResult
+    private func resendCommandForCurrentMode() -> Bool {
         switch mode {
         case .charging, .chargeMax:
             enableCharging()
-            log.info("Wake resync: re-enabled charging")
         case .paused, .sailing, .heatProtection:
             inhibitCharging()
-            log.info("Wake resync: re-inhibited charging")
         case .discharging:
             forceDischarge(true)
-            log.info("Wake resync: re-enabled discharge")
         case .onBattery, .idle, .calibrating:
-            break
+            return false
         }
+        return true
     }
 
     // MARK: - Sleep Assertion
@@ -832,20 +836,16 @@ final class ChargingManager: ObservableObject {
     /// Re-send current mode's SMC commands after helper reconnects.
     private func resyncChargingState() {
         log.info("Resyncing charging state after helper reconnect (mode: \(self.mode.displayName, privacy: .public))")
-        switch mode {
-        case .charging, .chargeMax:
-            enableCharging()
-        case .paused, .sailing, .heatProtection:
-            inhibitCharging()
-        case .discharging:
-            forceDischarge(true)
-        case .onBattery, .idle, .calibrating:
-            break
-        }
+        resendCommandForCurrentMode()
         updateMagSafeLED()
     }
 
     // MARK: - MagSafe LED
+
+    /// LED colour for "not charging": off or green, per the user's setting.
+    private var inactiveLEDColor: UInt8 {
+        settings.magSafeLEDOffWhenInactive ? HelperConstants.ledOff : HelperConstants.ledGreen
+    }
 
     /// Update MagSafe LED to reflect current mode + IOKit truth.
     /// Uses `lastIsCharging` (updated every evaluateState) so LED reflects
@@ -876,7 +876,7 @@ final class ChargingManager: ObservableObject {
             color = HelperConstants.ledAuto
         } else if systemChargeLimitConflict {
             // System is blocking — LED should reflect "not charging" despite our intent
-            color = settings.magSafeLEDOffWhenInactive ? HelperConstants.ledOff : HelperConstants.ledGreen
+            color = inactiveLEDColor
         } else if mode == .discharging || mode == .charging || mode == .chargeMax {
             color = HelperConstants.ledOrange
         } else if isCharging {
@@ -885,7 +885,7 @@ final class ChargingManager: ObservableObject {
             // IOKit confirms not charging
             switch mode {
             case .paused, .sailing, .heatProtection, .calibrating:
-                color = settings.magSafeLEDOffWhenInactive ? HelperConstants.ledOff : HelperConstants.ledGreen
+                color = inactiveLEDColor
             default:
                 color = HelperConstants.ledAuto
             }
