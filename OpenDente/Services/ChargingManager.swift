@@ -20,8 +20,6 @@ extension ChargingControl {
     }
 }
 
-extension HelperClient: ChargingControl {}
-
 /// Manages charging logic: charge limit, sailing mode, heat protection, discharge, top up.
 /// Writes to SMC require root privileges (via privileged helper).
 @MainActor
@@ -46,7 +44,8 @@ final class ChargingManager: ObservableObject {
     private let smc = SMCService.shared
     private let battery: BatteryService
     let settings: AppSettings
-    private let helper: ChargingControl
+    private let helper: HelperConnection
+    private let session: HelperSession
     private let sleepAssertion: SleepAssertionControl
     private var cancellables = Set<AnyCancellable>()
     var heatProtectionTimer: Date?
@@ -55,11 +54,9 @@ final class ChargingManager: ObservableObject {
     /// Internal for testability.
     private(set) var modeBeforeSleep: ChargingMode?
 
-    /// Tracked helper version — used to gate protocol features (e.g. MagSafe LED).
+    /// What the connected helper supports — gates protocol features (e.g. MagSafe LED).
     /// Internal for testability.
-    var helperVersion: String?
-    /// One-shot guard so a stale-helper reload is attempted at most once per launch.
-    private var didAttemptHelperReload = false
+    var helperCapabilities: HelperCapabilities?
     /// Adapter-cut machines (CHIE/CH0J): true while WE have cut the adapter.
     /// Cutting the adapter makes IOKit report "on battery", so without this flag
     /// evaluateState would drop into .onBattery, forget the cut, and never restore
@@ -111,12 +108,14 @@ final class ChargingManager: ObservableObject {
     }
 
     /// Initializer with dependency injection for testability
-    init(settings: AppSettings, helper: ChargingControl, battery: BatteryService,
+    init(settings: AppSettings, helper: HelperConnection, battery: BatteryService,
          sleepAssertion: SleepAssertionControl? = nil,
+         registration: HelperRegistration = HelperInstallerRegistration(),
          now: @escaping () -> Date = Date.init) {
         self.now = now
         self.settings = settings
         self.helper = helper
+        self.session = HelperSession(connection: helper, registration: registration)
         self.battery = battery
         self.sleepAssertion = sleepAssertion ?? SleepAssertionManager()
     }
@@ -158,51 +157,13 @@ final class ChargingManager: ObservableObject {
     /// Connect to the helper daemon and start heartbeat.
     /// Called at startup and after helper installation.
     func connectToHelper() {
-        let status = HelperInstaller.status
-        isHelperInstalled = (status == .enabled)
-        log.info("Helper status: \(HelperInstaller.statusDescription, privacy: .public)")
-
-        if isHelperInstalled {
-            let client = HelperClient.shared
-            client.connect()
-
-            // Auto-resync when helper restarts (crash recovery) or reconnects
-            client.onHelperRestarted = { [weak self] in
-                log.info("Helper restarted/reconnected — resyncing state")
-                self?.syncWithHelper()
-            }
-
-            syncWithHelper()
-        }
-    }
-
-    /// Query helper version/API and resync charging state.
-    /// Called on initial connection and after helper restarts.
-    private func syncWithHelper() {
-        let client = HelperClient.shared
-        client.getChargingAPI { [weak self] api in
-            Task { @MainActor in
-                if let detected = SMCChargingAPI(rawValue: api), detected != .unknown {
-                    self?.chargingAPI = detected
-                }
-            }
-        }
-        client.getVersion { [weak self] version in
-            Task { @MainActor in
+        session.start(
+            onAPI: { [weak self] api in
+                self?.chargingAPI = api
+            },
+            onReady: { [weak self] capabilities in
                 guard let self else { return }
-                self.helperVersion = version
-                log.info("Helper version: \(version, privacy: .public)")
-                // If the running helper's version differs from the app bundle's
-                // helper, the registered SMAppService daemon is stale (the classic
-                // "rebuild keeps running the old helper" problem). Force a one-time
-                // unregister -> register so the current helper binary takes over.
-                if version != HelperConstants.helperVersion, !self.didAttemptHelperReload {
-                    self.didAttemptHelperReload = true
-                    log.warning("Helper version mismatch (running \(version, privacy: .public), expected \(HelperConstants.helperVersion, privacy: .public)) — reloading daemon")
-                    HelperInstaller.unregister()
-                    _ = HelperInstaller.register()
-                    return
-                }
+                self.helperCapabilities = capabilities
                 // Reset LED cache — helper may have restarted with default LED state
                 self.lastLEDColor = nil
                 self.updateMagSafeLED()
@@ -211,21 +172,21 @@ final class ChargingManager: ObservableObject {
                 // Resync charging state with the (re)connected helper
                 self.resyncChargingState()
             }
-        }
+        )
+        isHelperInstalled = session.isInstalled
     }
 
     /// Sync the stopChargingWhenSleeping setting to the helper (version-gated).
     /// Also computes the LED color the helper should use when inhibiting on sleep.
     private func syncSleepSettingsWithHelper() {
-        guard let version = helperVersion,
-              version.isVersionAtLeast(HelperConstants.minVersionSleepSync) else {
+        guard helperCapabilities?.supportsSleepSync == true else {
             return
         }
         // 0xFF = sentinel for "don't touch LED" (when controlMagSafeLED is off)
         let ledColor: UInt8 = settings.controlMagSafeLED
             ? inactiveLEDColor
             : 0xFF
-        HelperClient.shared.syncSleepSettings(
+        helper.syncSleepSettings(
             stopChargingWhenSleeping: settings.stopChargingWhenSleeping,
             sleepLEDColor: ledColor
         )
@@ -837,8 +798,7 @@ final class ChargingManager: ObservableObject {
             }
             return
         }
-        guard let version = helperVersion,
-              version.isVersionAtLeast(HelperConstants.minVersionMagSafeLED) else {
+        guard helperCapabilities?.supportsMagSafeLED == true else {
             return
         }
 
@@ -893,8 +853,7 @@ final class ChargingManager: ObservableObject {
             }
         }
         // Reset LED to system default (only if helper supports it)
-        if let version = helperVersion,
-           version.isVersionAtLeast(HelperConstants.minVersionMagSafeLED) {
+        if helperCapabilities?.supportsMagSafeLED == true {
             helper.setMagSafeLED(color: HelperConstants.ledAuto, completion: nil)
         }
         lastLEDColor = nil

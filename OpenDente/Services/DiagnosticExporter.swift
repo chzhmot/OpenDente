@@ -62,7 +62,7 @@ enum DiagnosticExporter {
         r += "=== OpenDente Diagnostic Report ===\n"
         r += "Generated: \(iso.string(from: Date()))\n"
         r += "App Version: \(appVersion) (\(buildNumber))\n"
-        r += "Helper Version: \(ChargingManager.shared.helperVersion ?? "unknown")\n"
+        r += "Helper Version: \(ChargingManager.shared.helperCapabilities?.version ?? "unknown")\n"
         r += "macOS: \(osStr)\n"
         r += "Model: \(model)\n"
         r += "\n"

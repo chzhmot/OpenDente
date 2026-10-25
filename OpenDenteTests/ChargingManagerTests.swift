@@ -5,7 +5,7 @@ import XCTest
 
 /// Records all charging control calls for verification.
 /// Completes with success by default. Set `shouldFail` to simulate helper failures.
-final class MockChargingControl: ChargingControl, @unchecked Sendable {
+final class MockChargingControl: HelperConnection, @unchecked Sendable {
     enum Call: Equatable, Sendable {
         case enableCharging
         case inhibitCharging
@@ -61,7 +61,41 @@ final class MockChargingControl: ChargingControl, @unchecked Sendable {
 
     nonisolated func resetToDefaultsSync(timeout: TimeInterval) {}
 
-    func reset() { calls.removeAll() }
+    func reset() {
+        calls.removeAll()
+        connectCount = 0
+        sleepSyncs.removeAll()
+    }
+
+    // MARK: HelperConnection
+
+    /// Version and API the fake helper reports.
+    var reportedVersion = HelperConstants.helperVersion
+    var reportedAPI = "unknown"
+    private(set) var connectCount = 0
+    private(set) var versionQueries = 0
+    private(set) var apiQueries = 0
+    private(set) var sleepSyncs: [(stopChargingWhenSleeping: Bool, sleepLEDColor: UInt8)] = []
+    var onHelperRestarted: (() -> Void)?
+
+    @MainActor func connect() { connectCount += 1 }
+
+    func getVersion(completion: @escaping @Sendable (String) -> Void) {
+        versionQueries += 1
+        completion(reportedVersion)
+    }
+
+    func getChargingAPI(completion: @escaping @Sendable (String) -> Void) {
+        apiQueries += 1
+        completion(reportedAPI)
+    }
+
+    func syncSleepSettings(stopChargingWhenSleeping: Bool, sleepLEDColor: UInt8) {
+        sleepSyncs.append((stopChargingWhenSleeping, sleepLEDColor))
+    }
+
+    /// Simulate the helper restarting or the connection being re-established.
+    func fireHelperRestarted() { onHelperRestarted?() }
 }
 
 // MARK: - Test Factory
@@ -105,6 +139,15 @@ func makeBatteryState(
 }
 
 // MARK: - Mock Sleep Assertion
+
+/// Fake install state and re-registration for HelperSession.
+@MainActor
+final class FakeHelperRegistration: HelperRegistration {
+    var isEnabled = true
+    var statusDescription = "Enabled"
+    private(set) var reloadCount = 0
+    func reload() { reloadCount += 1 }
+}
 
 /// Records sleep assertion calls for verification without touching IOPMAssertion.
 @MainActor
@@ -1393,7 +1436,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_chargingMode_sendsOrange() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         // LED shows orange in charging mode — reflects intent, not IOKit lag
         manager.evaluateState(makeBatteryState(percentage: 50, isCharging: true))
         XCTAssertEqual(manager.mode, .charging)
@@ -1403,7 +1446,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_chargingMode_orangeEvenBeforeIOKitConfirms() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         // IOKit hasn't confirmed charging yet (isCharging=false), but mode is .charging
         // LED should still be orange — shows intent, not stale IOKit state
         manager.evaluateState(makeBatteryState(percentage: 50, isCharging: false))
@@ -1414,7 +1457,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_pausedMode_sendsGreen() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         manager.evaluateState(makeBatteryState(percentage: 80))
         XCTAssertEqual(manager.mode, .paused)
         XCTAssertTrue(mock.calls.contains(.setMagSafeLED(color: HelperConstants.ledGreen)),
@@ -1423,7 +1466,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_onBattery_sendsDefault() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         manager.evaluateState(makeBatteryState(percentage: 50, isPluggedIn: false))
         XCTAssertEqual(manager.mode, .onBattery)
         XCTAssertTrue(mock.calls.contains(.setMagSafeLED(color: HelperConstants.ledAuto)),
@@ -1432,7 +1475,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_disabled_noCalls() {
         settings.controlMagSafeLED = false
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         manager.evaluateState(makeBatteryState(percentage: 50))
         XCTAssertEqual(manager.mode, .charging)
         XCTAssertFalse(mock.calls.contains(where: {
@@ -1443,7 +1486,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_chargeMax_sendsOrange() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         // Start top up, then evaluate with IOKit confirming charging
         manager.startChargeMax()
         manager.evaluateState(makeBatteryState(percentage: 50, isCharging: true))
@@ -1453,7 +1496,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_sailing_sendsGreen() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         settings.sailingModeEnabled = true
         settings.sailingRange = 10
 
@@ -1466,7 +1509,7 @@ final class ChargingManagerTests: XCTestCase {
     func testMagSafeLED_pausedMode_offWhenInactive() {
         settings.controlMagSafeLED = true
         settings.magSafeLEDOffWhenInactive = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         manager.evaluateState(makeBatteryState(percentage: 80))
         XCTAssertEqual(manager.mode, .paused)
         XCTAssertTrue(mock.calls.contains(.setMagSafeLED(color: HelperConstants.ledOff)),
@@ -1476,7 +1519,7 @@ final class ChargingManagerTests: XCTestCase {
     func testMagSafeLED_sailing_offWhenInactive() {
         settings.controlMagSafeLED = true
         settings.magSafeLEDOffWhenInactive = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         settings.sailingModeEnabled = true
         settings.sailingRange = 10
 
@@ -1488,7 +1531,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_discharging_sendsOrange() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
         manager.startDischarge()
         XCTAssertEqual(manager.mode, .discharging)
         XCTAssertTrue(mock.calls.contains(.setMagSafeLED(color: HelperConstants.ledOrange)),
@@ -1497,7 +1540,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_oldHelper_noCalls() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = "1.0.0"  // Old helper without LED support
+        manager.helperCapabilities = HelperCapabilities(version: "1.0.0")  // Old helper without LED support
         manager.evaluateState(makeBatteryState(percentage: 50))
         XCTAssertEqual(manager.mode, .charging)
         XCTAssertFalse(mock.calls.contains(where: {
@@ -1506,9 +1549,60 @@ final class ChargingManagerTests: XCTestCase {
         }), "Old helper (1.0.0) must not receive setMagSafeLED calls")
     }
 
+    // MARK: - Helper session wiring
+
+    /// Let the session's main-actor hops (XPC callbacks) run.
+    private func settle() async {
+        for _ in 0..<10 { await Task.yield() }
+    }
+
+    func testHelperReady_resetsLEDCacheAndResendsCurrentModeCommand() async {
+        let registration = FakeHelperRegistration()
+        let mock = MockChargingControl()
+        let manager = ChargingManager(settings: settings, helper: mock, battery: .shared,
+                                      sleepAssertion: sleepMock, registration: registration)
+        manager.chargingAPI = .legacy
+        manager.lastLEDColor = HelperConstants.ledGreen
+        manager.evaluateState(makeBatteryState(percentage: 50))
+        XCTAssertEqual(manager.mode, .charging)
+        mock.reset()
+
+        manager.connectToHelper()
+        await settle()
+
+        XCTAssertTrue(manager.isHelperInstalled)
+        XCTAssertEqual(mock.connectCount, 1)
+        XCTAssertEqual(manager.helperCapabilities, HelperCapabilities(version: HelperConstants.helperVersion))
+        XCTAssertEqual(mock.calls, [.enableCharging])
+        XCTAssertNil(manager.lastLEDColor)
+    }
+
+    func testHelperReady_syncsSleepSettingsOnlyWhenSupported() async {
+        let registration = FakeHelperRegistration()
+        let mock = MockChargingControl()
+        let manager = ChargingManager(settings: settings, helper: mock, battery: .shared,
+                                      sleepAssertion: sleepMock, registration: registration)
+        mock.reportedVersion = HelperConstants.helperVersion
+        manager.connectToHelper()
+        await settle()
+        XCTAssertEqual(mock.sleepSyncs.count, 1)
+
+        // Old helper: stale reload is attempted, then the restart proceeds without sleep sync.
+        let oldMock = MockChargingControl()
+        oldMock.reportedVersion = "1.1.0"
+        let oldManager = ChargingManager(settings: settings, helper: oldMock, battery: .shared,
+                                         sleepAssertion: sleepMock, registration: FakeHelperRegistration())
+        oldManager.connectToHelper()
+        await settle()
+        oldMock.fireHelperRestarted()
+        await settle()
+        XCTAssertNotNil(oldManager.helperCapabilities)
+        XCTAssertEqual(oldMock.sleepSyncs.count, 0)
+    }
+
     func testMagSafeLED_noHelperVersion_noCalls() {
         settings.controlMagSafeLED = true
-        // helperVersion is nil (not yet queried)
+        // helperCapabilities is nil (not yet queried)
         manager.evaluateState(makeBatteryState(percentage: 50))
         XCTAssertEqual(manager.mode, .charging)
         XCTAssertFalse(mock.calls.contains(where: {
@@ -1519,7 +1613,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_multiDigitVersion_sendsLED() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = "1.10.0"  // Would fail with lexicographic string compare
+        manager.helperCapabilities = HelperCapabilities(version: "1.10.0")  // Would fail with lexicographic string compare
         manager.evaluateState(makeBatteryState(percentage: 50))
         XCTAssertEqual(manager.mode, .charging)
         XCTAssertTrue(mock.calls.contains(where: {
@@ -1530,7 +1624,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testMagSafeLED_reconnect_resetsStaleCacheAndResends() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
 
         // Set LED to green (paused mode, IOKit not charging)
         manager.evaluateState(makeBatteryState(percentage: 80))
@@ -1753,7 +1847,7 @@ final class ChargingManagerTests: XCTestCase {
 
     func testDidWake_resetsLEDCache_soLEDIsResent() {
         settings.controlMagSafeLED = true
-        manager.helperVersion = HelperConstants.helperVersion
+        manager.helperCapabilities = HelperCapabilities(version: HelperConstants.helperVersion)
 
         // Charge → LED set to orange
         manager.evaluateState(makeBatteryState(percentage: 60, isCharging: true))

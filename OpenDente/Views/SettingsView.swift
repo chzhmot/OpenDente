@@ -610,7 +610,7 @@ struct BatteryInfoTab: View {
                     infoRow("MagSafe LED", value: ledColorName)
                 }
                 infoRow("SMC Available", value: battery.smcAvailable ? "Yes" : "No")
-                if let version = charging.helperVersion {
+                if let version = charging.helperCapabilities?.version {
                     infoRow("Helper Version", value: version)
                 }
             }
