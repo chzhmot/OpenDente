@@ -148,6 +148,22 @@ enum SMCError: LocalizedError {
     }
 }
 
+// MARK: - SMC Access
+
+/// The slice of SMC access the charging backends need, so tests can substitute a fake.
+protocol SMCAccess {
+    func readKeyOptional(_ key: String) -> SMCValue?
+    func writeKey(_ key: String, bytes: [UInt8]) throws
+    func keyInfo(_ key: String) -> (type: String, size: UInt32)?
+}
+
+extension SMCAccess {
+    /// Check if a key exists and is readable
+    func keyExists(_ key: String) -> Bool {
+        readKeyOptional(key) != nil
+    }
+}
+
 // MARK: - SMC Service
 
 /// Low-level SMC access via IOKit. Reading works without root. Writing requires root.
@@ -324,7 +340,7 @@ final class SMCService: @unchecked Sendable {
 
     /// True when the firmware charge-range keys exist with the expected layout
     /// (bfD0/bfE0 ui32, bfF0 ui8). Read-only; these keys are readable without root.
-    static func hasFirmwareChargeRange(_ smc: SMCService) -> Bool {
+    static func hasFirmwareChargeRange(_ smc: SMCAccess) -> Bool {
         guard let upper = smc.keyInfo(FirmwareChargeLimit.upperKey),
               let lower = smc.keyInfo(FirmwareChargeLimit.lowerKey),
               let mode = smc.keyInfo(FirmwareChargeLimit.modeKey) else { return false }
@@ -407,3 +423,5 @@ final class SMCService: @unchecked Sendable {
         return tuple
     }
 }
+
+extension SMCService: SMCAccess {}
