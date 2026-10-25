@@ -13,6 +13,32 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        migrateLegacyKeys()
+    }
+
+    // MARK: - Legacy Keys
+
+    /// Menu bar settings saved under their old "statusBar" names, keyed by the new name.
+    private static let renamedKeys = [
+        "menuBarShowIcon": "statusBarShowIcon",
+        "menuBarShowPercentage": "statusBarShowPercentage",
+        "menuBarShowTimeRemaining": "statusBarShowTimeRemaining",
+        "menuBarShowTemperature": "statusBarShowTemperature",
+        "menuBarShowPower": "statusBarShowPower",
+    ]
+
+    /// Settings no version reads any more.
+    private static let retiredKeys = ["popoverDetailItems", "statusBarShowMode"]
+
+    /// Carries old values over to their new names (a value saved under the new name wins),
+    /// then drops the old and retired keys.
+    private func migrateLegacyKeys() {
+        for (newKey, oldKey) in Self.renamedKeys {
+            guard let value = defaults.object(forKey: oldKey) else { continue }
+            if defaults.object(forKey: newKey) == nil { defaults.set(value, forKey: newKey) }
+            defaults.removeObject(forKey: oldKey)
+        }
+        Self.retiredKeys.forEach(defaults.removeObject(forKey:))
     }
 
     // MARK: - Charging
@@ -93,29 +119,29 @@ final class AppSettings: ObservableObject {
 
     // MARK: - Menu Bar Display
 
-    var statusBarShowIcon: Bool {
-        get { defaults.object(forKey: "statusBarShowIcon") as? Bool ?? true }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowIcon") }
+    var menuBarShowIcon: Bool {
+        get { defaults.object(forKey: "menuBarShowIcon") as? Bool ?? true }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "menuBarShowIcon") }
     }
 
-    var statusBarShowPercentage: Bool {
-        get { defaults.object(forKey: "statusBarShowPercentage") as? Bool ?? true }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowPercentage") }
+    var menuBarShowPercentage: Bool {
+        get { defaults.object(forKey: "menuBarShowPercentage") as? Bool ?? true }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "menuBarShowPercentage") }
     }
 
-    var statusBarShowTimeRemaining: Bool {
-        get { defaults.bool(forKey: "statusBarShowTimeRemaining") }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowTimeRemaining") }
+    var menuBarShowTimeRemaining: Bool {
+        get { defaults.bool(forKey: "menuBarShowTimeRemaining") }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "menuBarShowTimeRemaining") }
     }
 
-    var statusBarShowTemperature: Bool {
-        get { defaults.bool(forKey: "statusBarShowTemperature") }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowTemperature") }
+    var menuBarShowTemperature: Bool {
+        get { defaults.bool(forKey: "menuBarShowTemperature") }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "menuBarShowTemperature") }
     }
 
-    var statusBarShowPower: Bool {
-        get { defaults.bool(forKey: "statusBarShowPower") }
-        set { objectWillChange.send(); defaults.set(newValue, forKey: "statusBarShowPower") }
+    var menuBarShowPower: Bool {
+        get { defaults.bool(forKey: "menuBarShowPower") }
+        set { objectWillChange.send(); defaults.set(newValue, forKey: "menuBarShowPower") }
     }
 
     /// Order of the menu bar items, left to right. Unknown entries are dropped and new items appended.
@@ -131,21 +157,21 @@ final class AppSettings: ObservableObject {
 
     func isShown(_ item: MenuBarItem) -> Bool {
         switch item {
-        case .icon:          return statusBarShowIcon
-        case .percentage:    return statusBarShowPercentage
-        case .timeRemaining: return statusBarShowTimeRemaining
-        case .temperature:   return statusBarShowTemperature
-        case .power:         return statusBarShowPower
+        case .icon:          return menuBarShowIcon
+        case .percentage:    return menuBarShowPercentage
+        case .timeRemaining: return menuBarShowTimeRemaining
+        case .temperature:   return menuBarShowTemperature
+        case .power:         return menuBarShowPower
         }
     }
 
     func setShown(_ item: MenuBarItem, _ shown: Bool) {
         switch item {
-        case .icon:          statusBarShowIcon = shown
-        case .percentage:    statusBarShowPercentage = shown
-        case .timeRemaining: statusBarShowTimeRemaining = shown
-        case .temperature:   statusBarShowTemperature = shown
-        case .power:         statusBarShowPower = shown
+        case .icon:          menuBarShowIcon = shown
+        case .percentage:    menuBarShowPercentage = shown
+        case .timeRemaining: menuBarShowTimeRemaining = shown
+        case .temperature:   menuBarShowTemperature = shown
+        case .power:         menuBarShowPower = shown
         }
     }
 

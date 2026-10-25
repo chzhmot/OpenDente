@@ -345,7 +345,7 @@ struct MenuBarTab: View {
             }
 
             Section {
-                Image(nsImage: statusBarImage)
+                Image(nsImage: menuBarImage)
                     .padding(8)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
@@ -375,7 +375,7 @@ struct MenuBarTab: View {
         .formStyle(.grouped)
     }
 
-    private var statusBarImage: NSImage {
+    private var menuBarImage: NSImage {
         MenuBarBatteryIcon.statusImage(
             MenuBarBatteryIcon.content(state: battery.batteryState, settings: settings))
     }

@@ -92,7 +92,7 @@ struct PanelView: View {
                 HStack(spacing: 4) {
                     Image(systemName: charging.systemChargeLimitConflict
                           ? "exclamationmark.triangle.fill"
-                          : charging.mode.statusBarIcon)
+                          : charging.mode.menuBarIcon)
                         .font(.system(size: 10))
                     Text(charging.systemChargeLimitConflict
                          ? "System Limit Active"

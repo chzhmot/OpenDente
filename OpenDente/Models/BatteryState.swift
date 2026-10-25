@@ -216,7 +216,7 @@ enum ChargingMode: String, CaseIterable {
         }
     }
 
-    var statusBarIcon: String {
+    var menuBarIcon: String {
         switch self {
         case .charging:       return "bolt.fill"
         case .paused:         return "pause.circle.fill"

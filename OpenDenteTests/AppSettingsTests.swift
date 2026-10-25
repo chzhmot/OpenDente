@@ -101,8 +101,8 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(settings.chargingEnabled)
         XCTAssertTrue(settings.sailingModeEnabled)
         XCTAssertTrue(settings.heatProtectionEnabled)
-        XCTAssertTrue(settings.statusBarShowIcon)
-        XCTAssertTrue(settings.statusBarShowPercentage)
+        XCTAssertTrue(settings.menuBarShowIcon)
+        XCTAssertTrue(settings.menuBarShowPercentage)
         XCTAssertTrue(settings.showPowerFlow)
         XCTAssertTrue(settings.controlMagSafeLED)
         XCTAssertTrue(settings.showNotifications)
@@ -116,10 +116,50 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(settings.automaticDischarge)
         XCTAssertFalse(settings.stopChargingWhenSleeping)
         XCTAssertFalse(settings.disableSleepUntilChargeLimit)
-        XCTAssertFalse(settings.statusBarShowTemperature)
-        XCTAssertFalse(settings.statusBarShowPower)
+        XCTAssertFalse(settings.menuBarShowTemperature)
+        XCTAssertFalse(settings.menuBarShowPower)
         XCTAssertFalse(settings.magSafeLEDOffWhenInactive)
         XCTAssertFalse(settings.launchAtLogin)
         XCTAssertFalse(settings.useHardwareBatteryPercentage)
+    }
+
+    // MARK: - Legacy Keys
+
+    func testLegacyStatusBarKeys_carryOverToMenuBarSettings() {
+        settings.defaults.set(false, forKey: "statusBarShowIcon")
+        settings.defaults.set(false, forKey: "statusBarShowPercentage")
+        settings.defaults.set(true, forKey: "statusBarShowTimeRemaining")
+        settings.defaults.set(true, forKey: "statusBarShowTemperature")
+        settings.defaults.set(true, forKey: "statusBarShowPower")
+
+        let migrated = AppSettings(defaults: settings.defaults)
+
+        XCTAssertFalse(migrated.menuBarShowIcon)
+        XCTAssertFalse(migrated.menuBarShowPercentage)
+        XCTAssertTrue(migrated.menuBarShowTimeRemaining)
+        XCTAssertTrue(migrated.menuBarShowTemperature)
+        XCTAssertTrue(migrated.menuBarShowPower)
+        XCTAssertNil(settings.defaults.object(forKey: "statusBarShowIcon"))
+        XCTAssertNil(settings.defaults.object(forKey: "statusBarShowPower"))
+    }
+
+    func testLegacyStatusBarKey_doesNotOverwriteMenuBarSetting() {
+        settings.defaults.set(true, forKey: "statusBarShowPower")
+        settings.defaults.set(false, forKey: "menuBarShowPower")
+
+        let migrated = AppSettings(defaults: settings.defaults)
+
+        XCTAssertFalse(migrated.menuBarShowPower)
+        XCTAssertNil(settings.defaults.object(forKey: "statusBarShowPower"))
+    }
+
+    func testRetiredKeys_areRemoved() {
+        settings.defaults.set(Data([1, 2, 3]), forKey: "popoverDetailItems")
+        settings.defaults.set(false, forKey: "statusBarShowMode")
+
+        _ = AppSettings(defaults: settings.defaults)
+
+        XCTAssertNil(settings.defaults.object(forKey: "popoverDetailItems"))
+        XCTAssertNil(settings.defaults.object(forKey: "statusBarShowMode"))
     }
 }
